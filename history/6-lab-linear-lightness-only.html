@@ -1,0 +1,752 @@
+<title>OKLCH Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: single column; header with a version switcher, then the active version's panel.
+     Every version edits one shared OKLCH color, which also sets the page background. */
+  :root {
+    --bg: #f6f6f8;
+    --fg: #1c1d24;
+    --muted: #6a6c7a;
+    --line: #dcdde4;
+    --surface: #ffffff;
+    --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #15161b; --fg: #ececf1; --muted: #9a9cab; --line: #2c2e38; --surface: #1d1e25; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --bg: #15161b; --fg: #ececf1; --muted: #9a9cab; --line: #2c2e38; --surface: #1d1e25; color-scheme: dark; }
+
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 48px 56px;
+  }
+  [hidden] { display: none !important; }   /* author display rules (e.g. .panel flex) would otherwise override hidden */
+  main { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+  header { display: flex; flex-direction: column; gap: 16px; }
+  header h1 { font-size: 1.9rem; margin: 0 0 6px; text-wrap: balance; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); max-width: 62ch; }
+  :focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
+
+  /* Version switcher */
+  .tabs { display: inline-flex; flex-wrap: wrap; align-self: flex-start; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--surface); }
+  .tabs button {
+    font: inherit; font-size: 0.85rem; font-weight: 600; color: var(--fg); background: transparent;
+    border: 0; padding: 6px 16px; cursor: pointer;
+  }
+  .tabs button .n { font-family: var(--mono); font-weight: 400; color: var(--muted); margin-right: 6px; }
+  .tabs button[aria-selected="true"], .tabs button[aria-checked="true"] { background: var(--fg); color: var(--bg); }
+  .mode-row { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; font-weight: 600; }
+  .tabs button[aria-selected="true"] .n { color: inherit; opacity: 0.7; }
+  .tabs button:focus-visible { outline-offset: -4px; }
+  .caption { font-size: 0.85rem; color: var(--muted); margin: 0; }
+
+  .panel {
+    display: flex; flex-direction: column; gap: 16px; padding: 20px; min-width: 0;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  }
+
+  /* Version 1: sliders */
+  .ctl { display: grid; grid-template-columns: 6em minmax(0, 1fr) 7ch; align-items: center; gap: 12px; font-size: 0.9rem; font-weight: 600; }
+  .ctl output { font-family: var(--mono); font-weight: 400; font-size: 0.85rem; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  .ctl input[type="range"] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 14px; margin: 0;
+    border-radius: 999px; border: 1px solid var(--line); cursor: pointer;
+  }
+  .ctl input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: var(--surface); border: 2px solid var(--fg); }
+  .ctl input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--surface); border: 2px solid var(--fg); }
+  @media (max-width: 420px) {
+    .ctl { grid-template-columns: minmax(0, 1fr) 7ch; }
+    .ctl input[type="range"] { grid-column: 1 / -1; grid-row: 2; }
+  }
+
+  /* Version 2: knob */
+  #dial { display: block; width: 100%; max-width: 300px; aspect-ratio: 1; margin: 0 auto; touch-action: none; cursor: pointer; }
+  /* Keyboard path for the knob: real range inputs, visually hidden; the dial draws a focus ring for whichever is focused */
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; margin: 0; }
+
+  /* Version 3: vector */
+  .vec-row { display: flex; flex-wrap: wrap; justify-content: center; align-items: stretch; gap: 16px; }
+  .plane-wrap { flex: 1 1 240px; max-width: 300px; min-width: 0; align-self: center; }
+  #plane { display: block; width: 100%; aspect-ratio: 1; touch-action: none; cursor: crosshair; }
+  .lcol { flex: 0 0 40px; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 600; }
+  .lcol output { font-family: var(--mono); font-weight: 400; font-size: 0.7rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #v-light {
+    writing-mode: vertical-lr; direction: rtl; -webkit-appearance: none; appearance: none;
+    flex: 1; width: 14px; min-height: 180px; margin: 0; border-radius: 999px; border: 1px solid var(--line); cursor: pointer;
+  }
+  #v-light::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: var(--surface); border: 2px solid var(--fg); }
+  #v-light::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--surface); border: 2px solid var(--fg); }
+  .side-wrap { flex: 1 1 170px; max-width: 225px; min-width: 0; }
+  #side { display: block; width: 100%; aspect-ratio: 3 / 4; touch-action: none; cursor: crosshair; }
+  .coords { margin: 0; text-align: center; font-family: var(--mono); font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: pre; }
+
+  /* Shared readout */
+  .readout { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-family: var(--mono); border-top: 1px solid var(--line); padding-top: 12px; }
+  .readout .hex { font-size: 1rem; color: var(--fg); user-select: all; }
+  .readout .alt { font-size: 0.8rem; color: var(--muted); user-select: all; }
+  .gamut { font-family: var(--sans); font-size: 0.8rem; color: var(--muted); }
+</style>
+
+<main>
+  <header>
+    <div>
+      <h1>OKLCH Lab</h1>
+      <p>Different control designs for the same OKLCH color. Every version edits one shared color, which also sets the page background, so you can switch versions and compare them directly. Chroma is either absolute (0 to 0.37, the same scale for every hue) or relative (a percentage of the most that hue can reach on screen at the current lightness, so every hue feels equally intense).</p>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Version">
+      <button type="button" role="tab" id="tab-sliders" aria-controls="view-sliders" data-view="sliders"><span class="n">1</span>Sliders</button>
+      <button type="button" role="tab" id="tab-knob" aria-controls="view-knob" data-view="knob"><span class="n">2</span>Knob</button>
+      <button type="button" role="tab" id="tab-vector" aria-controls="view-vector" data-view="vector"><span class="n">3</span>Vector</button>
+    </div>
+    <div class="mode-row">
+      <span id="cm-label">Chroma</span>
+      <div class="tabs" role="radiogroup" aria-labelledby="cm-label">
+        <button type="button" role="radio" data-mode="absolute">Absolute</button>
+        <button type="button" role="radio" data-mode="relative">Relative</button>
+      </div>
+    </div>
+    <p class="caption" id="caption"></p>
+  </header>
+
+  <section class="panel" id="view-sliders" role="tabpanel" aria-labelledby="tab-sliders" hidden>
+    <label class="ctl" for="s-hue"><span>Hue</span><input type="range" id="s-hue" min="0" max="360" step="1"><output id="s-hue-v" for="s-hue"></output></label>
+    <label class="ctl" for="s-chroma"><span>Chroma</span><input type="range" id="s-chroma" min="0" max="1000" step="1"><output id="s-chroma-v" for="s-chroma"></output></label>
+    <label class="ctl" for="s-light"><span>Lightness</span><input type="range" id="s-light" min="0" max="100" step="0.1"><output id="s-light-v" for="s-light"></output></label>
+  </section>
+
+  <section class="panel" id="view-knob" role="tabpanel" aria-labelledby="tab-knob" hidden>
+    <canvas id="dial" aria-hidden="true"></canvas>
+    <label class="sr" for="k-hue">Hue<input type="range" id="k-hue" min="0" max="360" step="1"></label>
+    <label class="sr" for="k-chroma">Chroma<input type="range" id="k-chroma" min="0" max="1000" step="1"></label>
+    <label class="sr" for="k-light">Lightness<input type="range" id="k-light" min="0" max="100" step="0.1"></label>
+  </section>
+
+  <section class="panel" id="view-vector" role="tabpanel" aria-labelledby="tab-vector" hidden>
+    <div class="vec-row">
+      <div class="plane-wrap"><canvas id="plane" aria-hidden="true"></canvas></div>
+      <label class="lcol" for="v-light"><span>L</span><input type="range" id="v-light" min="0" max="100" step="0.1" aria-label="Lightness"><output id="v-light-v" for="v-light"></output></label>
+      <div class="side-wrap"><canvas id="side" aria-hidden="true"></canvas></div>
+    </div>
+    <label class="sr" for="v-hue">Hue<input type="range" id="v-hue" min="0" max="360" step="1"></label>
+    <label class="sr" for="v-chroma">Chroma<input type="range" id="v-chroma" min="0" max="1000" step="1"></label>
+    <p class="coords" id="v-coords"></p>
+  </section>
+
+  <div class="readout">
+    <span class="hex" id="o-hex"></span>
+    <span class="alt" id="o-alt"></span>
+    <span class="gamut" id="o-gamut" hidden></span>
+  </div>
+</main>
+
+<script>
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} }
+  };
+  const $ = id => document.getElementById(id);
+  const root = document.documentElement;
+
+  // ---- Color math (sRGB channels are 0..1) ----
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const range = (a, b, step) => { const r = []; for (let v = a; v <= b + 1e-9; v += step) r.push(v); return r; };
+  const toHex = rgb => "#" + rgb.map(v => Math.round(clamp(v, 0, 1) * 255).toString(16).padStart(2, "0")).join("");
+  const grad = hexes => `linear-gradient(to right, ${hexes.join(", ")})`;
+  const toGamma = v => v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
+  // OKLCH (L 0..1) -> linear sRGB, may fall outside 0..1
+  function oklchToLinear(L, C, H) {
+    const hr = H * Math.PI / 180, a = C * Math.cos(hr), b = C * Math.sin(hr);
+    const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+    const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+    const s = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3;
+    return [
+       4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+      -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+      -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+    ];
+  }
+  const inGamut = rgb => rgb.every(v => v >= -1e-5 && v <= 1 + 1e-5);
+  // Gamut-maps by lowering chroma (keeping lightness and hue) until the color fits sRGB
+  function oklchToRgb(L, C, H) {
+    let c = C;
+    if (!inGamut(oklchToLinear(L, C, H))) {
+      let lo = 0, hi = C;
+      for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (inGamut(oklchToLinear(L, mid, H))) lo = mid; else hi = mid; }
+      c = lo;
+    }
+    return { rgb: oklchToLinear(L, c, H).map(v => toGamma(clamp(v, 0, 1))), c, clipped: c < C - 1e-4 };
+  }
+  const hexOf = (L, C, H) => toHex(oklchToRgb(L, C, H).rgb);
+
+  // ---- Chroma scale: controls work in positions 0..1000, mapped to chroma 0..C_MAX ----
+  // Scales live in a table so a future "mode" (e.g. backgrounds) can swap in one that favors low chroma.
+  const C_MAX = 0.37;                                                      // covers every sRGB color
+  const SCALES = {
+    linear: { toC: p => C_MAX * p / 1000, toPos: c => 1000 * clamp(c, 0, C_MAX) / C_MAX },
+    exponential: {
+      toC: p => C_MAX * (Math.pow(101, p / 1000) - 1) / 100,
+      toPos: c => 1000 * Math.log(clamp(c, 0, C_MAX) / C_MAX * 100 + 1) / Math.log(101)
+    }
+  };
+  let scale = SCALES.linear;
+  const posToChroma = p => scale.toC(p);
+  const chromaToPos = c => Math.round(scale.toPos(c));
+
+  // sRGB gamut boundary: the most chroma a screen can show at this lightness (0..1) and hue
+  const maxChroma = (L, H) => {
+    let lo = 0, hi = C_MAX;
+    for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (inGamut(oklchToLinear(L, m, H))) lo = m; else hi = m; }
+    return lo;
+  };
+  // Chroma mode. Absolute: position 0..1000 is a share of C_MAX for every hue.
+  // Relative: position is a share of maxChroma at the current lightness and hue, so equal positions feel equally intense.
+  let chromaMode = store.get("ok-chroma-mode") === "relative" ? "relative" : "absolute";
+  const chromaAt = (p, L, H) => chromaMode === "relative" ? maxChroma(L, H) * p / 1000 : posToChroma(p);
+  const chromaLabel = (C, p) => chromaMode === "relative" ? `${Math.round(p / 10)}%` : C.toFixed(3);
+
+  // ---- Shared state: hue in degrees, chroma as slider position 0..1000, lightness in % ----
+  const num = k => { const v = parseFloat(store.get(k)); return Number.isFinite(v) ? v : null; };
+  const startDark = root.dataset.theme === "dark" || (!root.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+  // A chroma position saved under the old exponential scale is converted so the color stays the same
+  const savedP = num("ok-c");
+  const initialP = savedP === null ? chromaToPos(0.01)
+    : store.get("ok-scale") === "linear" ? savedP : chromaToPos(SCALES.exponential.toC(savedP));
+  store.set("ok-scale", "linear");
+  const state = {
+    h: num("ok-h") ?? 270,
+    p: initialP,
+    l: num("ok-l") ?? (startDark ? 18 : 97.5)
+  };
+  let theme = { fg: "#1c1d24", muted: "#3f414c", line: "#dcdde4" };
+
+  function setState(patch) {
+    Object.assign(state, patch);
+    store.set("ok-h", state.h); store.set("ok-c", state.p); store.set("ok-l", state.l);
+    render();
+  }
+
+  function render() {
+    const H = state.h, L = state.l, C = chromaAt(state.p, L / 100, H);
+    const res = oklchToRgb(L / 100, C, H);
+    const hex = toHex(res.rgb);
+    applyPage(L / 100, res.c, H, hex);
+    renderSliders(H, C, L);
+    renderKnob(H, C, L);
+    renderVector(H, C, L);
+    $("o-hex").textContent = hex;
+    $("o-alt").textContent = `oklch(${L.toFixed(1)}% ${res.c.toFixed(3)} ${H})`;
+    $("o-gamut").hidden = !res.clipped;
+    $("o-gamut").textContent = `Outside sRGB, shown at chroma ${res.c.toFixed(3)}`;
+  }
+
+  // Surfaces and borders are offset in OKLCH lightness so they track perceived brightness
+  function applyPage(L, C, H, hex) {
+    const s = root.style;
+    const dark = L < 0.6;
+    theme = {
+      fg: dark ? "#ececf1" : "#1c1d24",
+      muted: dark ? "#b8bac6" : "#3f414c",
+      line: hexOf(clamp(L + (dark ? 0.14 : -0.12), 0, 1), C, H)
+    };
+    s.setProperty("--bg", hex);
+    s.setProperty("--surface", hexOf(clamp(L + (dark ? 0.05 : 0.03), 0, 1), C, H));
+    s.setProperty("--line", theme.line);
+    s.setProperty("--fg", theme.fg);
+    s.setProperty("--muted", theme.muted);
+    s.colorScheme = dark ? "dark" : "light";
+  }
+
+  // ---- Version 1: sliders ----
+  const sl = { h: $("s-hue"), c: $("s-chroma"), l: $("s-light") };
+  sl.h.addEventListener("input", () => setState({ h: +sl.h.value }));
+  sl.c.addEventListener("input", () => setState({ p: +sl.c.value }));
+  sl.l.addEventListener("input", () => setState({ l: +sl.l.value }));
+
+  function renderSliders(H, C, L) {
+    sl.h.value = H; sl.c.value = state.p; sl.l.value = L;
+    sl.h.style.background = grad(range(0, 360, 15).map(x => hexOf(L / 100, chromaAt(state.p, L / 100, x), x)));
+    sl.c.style.background = grad(range(0, 1000, 100).map(p => hexOf(L / 100, chromaAt(p, L / 100, H), H)));
+    sl.l.style.background = grad(range(0, 100, 10).map(l => hexOf(l / 100, chromaAt(state.p, l / 100, H), H)));
+    $("s-hue-v").textContent = H + "°";
+    $("s-chroma-v").textContent = chromaLabel(C, state.p);
+    $("s-light-v").textContent = L.toFixed(1) + "%";
+  }
+
+  // ---- Version 2: knob ----
+  // Angles are compass degrees: 0 = top, increasing clockwise. Radii are fractions of the dial's half-width.
+  const DISC = 0.44, HUE_IN = 0.50, HUE_OUT = 0.60, ARC_IN = 0.75, ARC_OUT = 0.85, KNOB = 0.065;
+  const L_START = 170, C_START = 190, SPAN = 160;   // lightness: 170° (bottom) -> 10° (top); chroma: 190° -> 350°
+  const lightAngle = t => L_START - SPAN * t;
+  const chromaAngle = t => C_START + SPAN * t;
+
+  const kn = { h: $("k-hue"), c: $("k-chroma"), l: $("k-light") };
+  kn.h.addEventListener("input", () => setState({ h: +kn.h.value }));
+  kn.c.addEventListener("input", () => setState({ p: +kn.c.value }));
+  kn.l.addEventListener("input", () => setState({ l: +kn.l.value }));
+  Object.values(kn).forEach(el => { el.addEventListener("focus", draw); el.addEventListener("blur", draw); });
+
+  const canvas = $("dial"), ctx = canvas.getContext("2d");
+  let size = 0, dpr = 1;
+  const fontFamily = getComputedStyle(document.body).fontFamily;
+  const rad = deg => (deg - 90) * Math.PI / 180;
+
+  function renderKnob(H, C, L) {
+    kn.h.value = H; kn.c.value = state.p; kn.l.value = L;
+    draw();
+  }
+  function bandPath(r0, r1, a0, a1) {
+    const c = size / 2, R = size / 2;
+    ctx.beginPath();
+    ctx.arc(c, c, r1 * R, rad(a0), rad(a1));
+    ctx.arc(c, c, r0 * R, rad(a1), rad(a0), true);
+    ctx.closePath();
+  }
+  // Same band, but with semicircular end caps
+  function roundBandPath(r0, r1, a0, a1) {
+    const c = size / 2, R = size / 2, rm = (r0 + r1) / 2 * R, w = (r1 - r0) / 2 * R;
+    const cap = (a, from, to) => ctx.arc(c + Math.cos(rad(a)) * rm, c + Math.sin(rad(a)) * rm, w, from, to);
+    ctx.beginPath();
+    ctx.arc(c, c, r1 * R, rad(a0), rad(a1));
+    cap(a1, rad(a1), rad(a1) + Math.PI);
+    ctx.arc(c, c, r0 * R, rad(a1), rad(a0), true);
+    cap(a0, rad(a0) + Math.PI, rad(a0) + 2 * Math.PI);
+    ctx.closePath();
+  }
+  function handle(angle, r, color) {
+    const c = size / 2, R = size / 2, a = rad(angle);
+    const x = c + Math.cos(a) * r * R, y = c + Math.sin(a) * r * R;
+    ctx.beginPath(); ctx.arc(x, y, KNOB * R, 0, Math.PI * 2);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = "#ffffff"; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, KNOB * R + 1.5, 0, Math.PI * 2);
+    ctx.lineWidth = 1.5; ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.stroke();
+  }
+  function focusRing(r0, r1, a0, a1, input, round) {
+    if (!input.matches(":focus-visible")) return;
+    (round ? roundBandPath : bandPath)(r0 - 0.03, r1 + 0.03, a0, a1);
+    ctx.lineWidth = 2; ctx.strokeStyle = theme.fg; ctx.stroke();
+  }
+
+  function draw() {
+    if (!size || $("view-knob").hidden) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, size, size);
+    const H = state.h, P = state.p, L = state.l / 100, C = chromaAt(P, L, H);
+    const c = size / 2, R = size / 2;
+
+    // Hue ring at current chroma and lightness
+    for (let h = 0; h < 360; h += 2) { bandPath(HUE_IN, HUE_OUT, h, h + 2.6); ctx.fillStyle = hexOf(L, chromaAt(P, L, h + 1), h + 1); ctx.fill(); }
+    bandPath(HUE_IN, HUE_OUT, 0, 360); ctx.lineWidth = 1; ctx.strokeStyle = theme.line; ctx.stroke();
+
+    // Chroma arc (left) and lightness arc (right): 80 slices each, clipped to a band with rounded ends.
+    // The end slices are stretched past the ends (by the cap's angular width) so the caps get filled too.
+    const N = 80, cap = (ARC_OUT - ARC_IN) / (ARC_IN + ARC_OUT) * 180 / Math.PI + 1;
+    const C_END = C_START + SPAN, L_END = L_START - SPAN;
+    ctx.save(); roundBandPath(ARC_IN, ARC_OUT, C_START, C_END); ctx.clip();
+    for (let k = 0; k < N; k++) {
+      const t0 = k / N, t1 = (k + 1) / N, tm = (k + 0.5) / N;
+      bandPath(ARC_IN, ARC_OUT, chromaAngle(t0) - (k === 0 ? cap : 0), chromaAngle(t1) + (k < N - 1 ? 0.6 : cap));
+      ctx.fillStyle = hexOf(L, chromaAt(tm * 1000, L, H), H); ctx.fill();
+    }
+    ctx.restore();
+    ctx.save(); roundBandPath(ARC_IN, ARC_OUT, L_END, L_START); ctx.clip();
+    for (let k = 0; k < N; k++) {
+      const t0 = k / N, t1 = (k + 1) / N, tm = (k + 0.5) / N;
+      bandPath(ARC_IN, ARC_OUT, lightAngle(t1) - (k < N - 1 ? 0.6 : cap), lightAngle(t0) + (k === 0 ? cap : 0));
+      ctx.fillStyle = hexOf(tm, chromaAt(P, tm, H), H); ctx.fill();
+    }
+    ctx.restore();
+    ctx.lineWidth = 1; ctx.strokeStyle = theme.line;
+    roundBandPath(ARC_IN, ARC_OUT, C_START, C_END); ctx.stroke();
+    roundBandPath(ARC_IN, ARC_OUT, L_END, L_START); ctx.stroke();
+
+    focusRing(HUE_IN, HUE_OUT, 0, 360, kn.h, false);
+    focusRing(ARC_IN, ARC_OUT, C_START, C_END, kn.c, true);
+    focusRing(ARC_IN, ARC_OUT, L_END, L_START, kn.l, true);
+
+    // Center disc shows the current color
+    const hex = hexOf(L, C, H);
+    ctx.beginPath(); ctx.arc(c, c, DISC * R, 0, Math.PI * 2);
+    ctx.fillStyle = hex; ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = theme.line; ctx.stroke();
+    ctx.fillStyle = L < 0.6 ? "#ececf1" : "#1c1d24";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    // Hex on top, then hue, chroma and lightness
+    const mono = getComputedStyle(root).getPropertyValue("--mono");
+    ctx.font = `600 ${Math.round(0.12 * R)}px ${fontFamily}`;
+    ctx.fillText(hex, c, c - 0.17 * R);
+    ctx.font = `400 ${Math.round(0.08 * R)}px ${mono}`;
+    ctx.fillText(`H ${H}°`, c, c - 0.03 * R);
+    ctx.fillText(`C ${chromaLabel(C, P)}`, c, c + 0.09 * R);
+    ctx.fillText(`L ${(L * 100).toFixed(1)}%`, c, c + 0.21 * R);
+
+    // End labels for the arcs
+    ctx.fillStyle = theme.muted;
+    ctx.font = `600 ${Math.round(0.08 * R)}px ${fontFamily}`;
+    const lab = (txt, angle, r) => { const a = rad(angle); ctx.fillText(txt, c + Math.cos(a) * r * R, c + Math.sin(a) * r * R); };
+    lab("C", 196, 0.94);
+    lab("L", 164, 0.94);
+
+    // Handles
+    const mid = (HUE_IN + HUE_OUT) / 2, amid = (ARC_IN + ARC_OUT) / 2;
+    handle(H, mid, hex);
+    handle(chromaAngle(P / 1000), amid, hex);
+    handle(lightAngle(L), amid, hex);
+  }
+
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    size = canvas.getBoundingClientRect().width;
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+    draw();
+  }
+  new ResizeObserver(resize).observe(canvas);
+
+  let active = null;
+  function polar(e) {
+    const r = canvas.getBoundingClientRect();
+    const dx = e.clientX - r.left - r.width / 2, dy = e.clientY - r.top - r.height / 2;
+    return { dx, dy, dist: Math.hypot(dx, dy) / (r.width / 2), angle: (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360 };
+  }
+  function pick(p) {
+    if (p.dist > 1.02 || p.dist < 0.3) return null;
+    if (p.dist < (HUE_OUT + ARC_IN) / 2) return "h";
+    return p.dx < 0 ? "c" : "l";
+  }
+  function setFrom(p) {
+    if (active === "h") setState({ h: Math.round(p.angle) % 360 });
+    if (active === "l") {
+      const t = p.angle >= L_START - SPAN && p.angle <= L_START ? (L_START - p.angle) / SPAN : (p.dy < 0 ? 1 : 0);
+      setState({ l: Math.round(t * 1000) / 10 });
+    }
+    if (active === "c") {
+      const t = p.angle >= C_START && p.angle <= C_START + SPAN ? (p.angle - C_START) / SPAN : (p.dy < 0 ? 1 : 0);
+      setState({ p: Math.round(t * 1000) });
+    }
+  }
+  canvas.addEventListener("pointerdown", e => {
+    const p = polar(e);
+    active = pick(p);
+    if (!active) return;
+    canvas.setPointerCapture(e.pointerId);
+    kn[active].focus({ preventScroll: true });
+    setFrom(p);
+  });
+  canvas.addEventListener("pointermove", e => { if (active) setFrom(polar(e)); });
+  const end = () => { active = null; };
+  canvas.addEventListener("pointerup", end);
+  canvas.addEventListener("pointercancel", end);
+
+  // ---- Version 3: vector ----
+  // A point on a plane around an origin: its angle is hue (0° = up, clockwise), its distance is chroma.
+  // Distance uses the same chroma scale as the other versions.
+  const PR = 0.86;                       // plane radius as a fraction of the canvas half-width
+  const FIELD = 180;                     // resolution of the color field bitmap
+  const monoFont = getComputedStyle(root).getPropertyValue("--mono");
+  const chromaToR = c => scale.toPos(c) / 1000;
+  // Reference rings/gridlines: chroma values in absolute mode, percentages of the maximum in relative mode
+  const chromaGrid = () => chromaMode === "relative"
+    ? [0.25, 0.5, 0.75].map(r => ({ r, label: `${r * 100}%` }))
+    : [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35].map(v => ({ r: chromaToR(v), label: [0.1, 0.2, 0.3].includes(v) ? String(v) : "" }));
+
+  const pv = { h: $("v-hue"), c: $("v-chroma") };
+  pv.h.addEventListener("input", () => setState({ h: +pv.h.value }));
+  pv.c.addEventListener("input", () => setState({ p: +pv.c.value }));
+  Object.values(pv).forEach(el => { el.addEventListener("focus", drawPlane); el.addEventListener("blur", drawPlane); });
+
+  const plane = $("plane"), pctx = plane.getContext("2d");
+  const field = document.createElement("canvas");
+  field.width = field.height = FIELD;
+  let psize = 0, pdpr = 1, fieldL = null, gamutEdge = [];
+
+  // The color field only depends on lightness, so it is rebuilt only when lightness changes
+  function buildField(L) {
+    const f = field.getContext("2d"), img = f.createImageData(FIELD, FIELD), d = img.data, half = FIELD / 2;
+    for (let y = 0; y < FIELD; y++) for (let x = 0; x < FIELD; x++) {
+      const dx = (x + 0.5 - half) / half, dy = (y + 0.5 - half) / half, r = Math.hypot(dx, dy);
+      if (r > 1.03) continue;
+      const hue = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+      const rgb = oklchToRgb(L, chromaAt(Math.min(r, 1) * 1000, L, hue), hue).rgb;
+      const i = (y * FIELD + x) * 4;
+      d[i] = Math.round(rgb[0] * 255); d[i + 1] = Math.round(rgb[1] * 255); d[i + 2] = Math.round(rgb[2] * 255); d[i + 3] = 255;
+    }
+    f.putImageData(img, 0, 0);
+    gamutEdge = range(0, 360, 2).map(h => [h, chromaToR(maxChroma(L, h))]);
+    fieldL = L;
+  }
+
+  function renderVector(H, C, L) {
+    pv.h.value = H; pv.c.value = state.p;
+    const rel = chromaMode === "relative" ? ` (${Math.round(state.p / 10)}% of max)` : "";
+    $("v-coords").textContent = `H ${H}°  ·  C ${C.toFixed(3)}${rel}  ·  L ${L.toFixed(1)}%`;
+    vl.value = L;
+    vl.style.background = `linear-gradient(to top, ${range(0, 100, 10).map(l => hexOf(l / 100, chromaAt(state.p, l / 100, H), H)).join(", ")})`;
+    $("v-light-v").textContent = L.toFixed(1);
+    drawPlane();
+    drawSide();
+  }
+
+  function drawPlane() {
+    if (!psize || $("view-vector").hidden) return;
+    const H = state.h, L = state.l / 100, C = chromaAt(state.p, L, H);
+    if (fieldL !== L) buildField(L);
+    const c = psize / 2, R = PR * psize / 2;
+    const at = (h, r) => [c + Math.cos(rad(h)) * r * R, c + Math.sin(rad(h)) * r * R];
+    const ink = L < 0.6 ? "255,255,255" : "0,0,0";
+    pctx.setTransform(pdpr, 0, 0, pdpr, 0, 0);
+    pctx.clearRect(0, 0, psize, psize);
+
+    // Color field, clipped to the plane
+    pctx.save();
+    pctx.beginPath(); pctx.arc(c, c, R, 0, Math.PI * 2); pctx.clip();
+    pctx.imageSmoothingEnabled = true;
+    pctx.drawImage(field, c - R, c - R, 2 * R, 2 * R);
+    pctx.restore();
+
+    // Axes and chroma rings
+    pctx.lineWidth = 1; pctx.strokeStyle = `rgba(${ink},0.18)`;
+    pctx.beginPath(); pctx.moveTo(c, c - R); pctx.lineTo(c, c + R); pctx.moveTo(c - R, c); pctx.lineTo(c + R, c); pctx.stroke();
+    pctx.fillStyle = `rgba(${ink},0.6)`; pctx.font = `400 10px ${monoFont}`; pctx.textAlign = "left"; pctx.textBaseline = "middle";
+    chromaGrid().forEach(({ r: rf, label }) => {
+      const r = rf * R;
+      pctx.beginPath(); pctx.arc(c, c, r, 0, Math.PI * 2); pctx.stroke();
+      if (label) pctx.fillText(label, c + 3, c - r - 6);
+    });
+
+    // sRGB gamut edge at this lightness: colors beyond the dashed line are shown at reduced chroma.
+    // In relative mode the plane's own edge is the gamut edge, so there is nothing to draw.
+    if (chromaMode === "absolute") {
+    pctx.save();
+    pctx.setLineDash([4, 3]); pctx.strokeStyle = `rgba(${ink},0.6)`; pctx.lineWidth = 1.25;
+    pctx.beginPath();
+    gamutEdge.forEach(([h, r], i) => { const [x, y] = at(h, Math.min(r, 1)); i ? pctx.lineTo(x, y) : pctx.moveTo(x, y); });
+    pctx.closePath(); pctx.stroke();
+    pctx.restore();
+    }
+
+    // Plane edge, hue labels, keyboard focus ring
+    pctx.lineWidth = 1; pctx.strokeStyle = theme.line;
+    pctx.beginPath(); pctx.arc(c, c, R, 0, Math.PI * 2); pctx.stroke();
+    pctx.fillStyle = theme.muted; pctx.font = `600 11px ${fontFamily}`; pctx.textAlign = "center";
+    [0, 90, 180, 270].forEach(h => { const [x, y] = at(h, 1 + 13 / R); pctx.fillText(h + "°", x, y); });
+    if (pv.h.matches(":focus-visible") || pv.c.matches(":focus-visible")) {
+      pctx.lineWidth = 2; pctx.strokeStyle = theme.fg;
+      pctx.beginPath(); pctx.arc(c, c, R + 4, 0, Math.PI * 2); pctx.stroke();
+    }
+
+    // The vector: origin -> point
+    const [px, py] = at(H, state.p / 1000), hex = hexOf(L, C, H);
+    pctx.strokeStyle = `rgba(${ink},0.8)`; pctx.lineWidth = 1.5;
+    pctx.beginPath(); pctx.moveTo(c, c); pctx.lineTo(px, py); pctx.stroke();
+    pctx.fillStyle = `rgba(${ink},0.8)`;
+    pctx.beginPath(); pctx.arc(c, c, 3, 0, Math.PI * 2); pctx.fill();
+    pctx.beginPath(); pctx.arc(px, py, 9, 0, Math.PI * 2);
+    pctx.fillStyle = hex; pctx.fill();
+    pctx.lineWidth = 2; pctx.strokeStyle = "#ffffff"; pctx.stroke();
+    pctx.beginPath(); pctx.arc(px, py, 10.5, 0, Math.PI * 2);
+    pctx.lineWidth = 1.5; pctx.strokeStyle = "rgba(0,0,0,0.55)"; pctx.stroke();
+  }
+
+  function resizePlane() {
+    pdpr = window.devicePixelRatio || 1;
+    psize = plane.getBoundingClientRect().width;
+    plane.width = plane.height = Math.round(psize * pdpr);
+    drawPlane();
+  }
+  new ResizeObserver(resizePlane).observe(plane);
+
+  let dragging = false;
+  function setFromPlane(e) {
+    const b = plane.getBoundingClientRect();
+    const dx = e.clientX - b.left - b.width / 2, dy = e.clientY - b.top - b.height / 2;
+    const r = Math.min(Math.hypot(dx, dy) / (PR * b.width / 2), 1);
+    const h = Math.round((Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360) % 360;
+    setState({ h, p: Math.round(r * 1000) });
+  }
+  // One pointer drags the point; two pointers (touch pinch) change lightness. Spreading brightens.
+  const pointers = new Map();
+  let pinch = null;
+  const spread = () => { const [a, b] = [...pointers.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+  const setL = l => setState({ l: Math.round(clamp(l, 0, 100) * 10) / 10 });
+  plane.addEventListener("pointerdown", e => {
+    plane.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) { dragging = false; pinch = { d: spread(), l: state.l }; return; }
+    if (pointers.size > 2) return;
+    dragging = true;
+    pv.c.focus({ preventScroll: true });
+    setFromPlane(e);
+  });
+  plane.addEventListener("pointermove", e => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pointers.size === 2) setL(pinch.l + (spread() - pinch.d) * 0.25);
+    else if (dragging) setFromPlane(e);
+  });
+  const release = e => { pointers.delete(e.pointerId); if (pointers.size < 2) pinch = null; dragging = false; };
+  plane.addEventListener("pointerup", release);
+  plane.addEventListener("pointercancel", release);
+  // Scroll wheel, and trackpad pinch (which browsers report as ctrl + wheel), change lightness too
+  plane.addEventListener("wheel", e => {
+    e.preventDefault();
+    const unit = e.deltaMode === 1 ? 16 : 1;
+    setL(state.l - e.deltaY * unit * (e.ctrlKey ? 0.1 : 0.02));
+  }, { passive: false });
+
+  // Lightness slider beside the plane
+  const vl = $("v-light");
+  vl.addEventListener("input", () => setState({ l: +vl.value }));
+
+  // Side view: a vertical slice through the color space at the current hue (chroma across, lightness up)
+  const side = $("side"), sctx = side.getContext("2d");
+  const SW = 90, SH = 120;
+  const sfield = document.createElement("canvas");
+  sfield.width = SW; sfield.height = SH;
+  let sw = 0, sh = 0, sdpr = 1, sfieldH = null, sideEdge = [];
+
+  // The slice only depends on hue, so it is rebuilt only when hue changes
+  function buildSide(H) {
+    const f = sfield.getContext("2d"), img = f.createImageData(SW, SH), d = img.data;
+    for (let y = 0; y < SH; y++) for (let x = 0; x < SW; x++) {
+      const Ly = 1 - (y + 0.5) / SH;
+      const rgb = oklchToRgb(Ly, chromaAt((x + 0.5) / SW * 1000, Ly, H), H).rgb;
+      const i = (y * SW + x) * 4;
+      d[i] = Math.round(rgb[0] * 255); d[i + 1] = Math.round(rgb[1] * 255); d[i + 2] = Math.round(rgb[2] * 255); d[i + 3] = 255;
+    }
+    f.putImageData(img, 0, 0);
+    sideEdge = range(0, 100, 1).map(l => [chromaToR(maxChroma(l / 100, H)), l / 100]);
+    sfieldH = H;
+  }
+
+  function drawHandle(g, x, y, hex) {
+    g.beginPath(); g.arc(x, y, 9, 0, Math.PI * 2);
+    g.fillStyle = hex; g.fill();
+    g.lineWidth = 2; g.strokeStyle = "#ffffff"; g.stroke();
+    g.beginPath(); g.arc(x, y, 10.5, 0, Math.PI * 2);
+    g.lineWidth = 1.5; g.strokeStyle = "rgba(0,0,0,0.55)"; g.stroke();
+  }
+
+  function drawSide() {
+    if (!sw || $("view-vector").hidden) return;
+    const H = state.h, L = state.l / 100, C = chromaAt(state.p, L, H);
+    if (sfieldH !== H) buildSide(H);
+    const X = r => r * sw, Y = l => (1 - l) * sh;
+    sctx.setTransform(sdpr, 0, 0, sdpr, 0, 0);
+    sctx.clearRect(0, 0, sw, sh);
+
+    sctx.save();
+    sctx.beginPath(); sctx.roundRect(0.5, 0.5, sw - 1, sh - 1, 10); sctx.clip();
+    sctx.imageSmoothingEnabled = true;
+    sctx.drawImage(sfield, 0, 0, sw, sh);
+
+    // Grid: chroma lines (same values as the plane's rings) and lightness quarters
+    sctx.lineWidth = 1; sctx.strokeStyle = "rgba(128,128,128,0.35)";
+    sctx.beginPath();
+    chromaGrid().forEach(({ r }) => { const x = X(r); sctx.moveTo(x, 0); sctx.lineTo(x, sh); });
+    [0.25, 0.5, 0.75].forEach(l => { const y = Y(l); sctx.moveTo(0, y); sctx.lineTo(sw, y); });
+    sctx.stroke();
+
+    // sRGB gamut edge for this hue, drawn dark-under-light so it reads on any color
+    const edge = () => { sctx.beginPath(); sideEdge.forEach(([r, l], i) => { const x = X(Math.min(r, 1)), y = Y(l); i ? sctx.lineTo(x, y) : sctx.moveTo(x, y); }); };
+    if (chromaMode === "absolute") {
+      edge(); sctx.strokeStyle = "rgba(0,0,0,0.35)"; sctx.lineWidth = 2.5; sctx.stroke();
+      edge(); sctx.strokeStyle = "rgba(255,255,255,0.9)"; sctx.lineWidth = 1.25; sctx.setLineDash([4, 3]); sctx.stroke(); sctx.setLineDash([]);
+    }
+
+    // Labels
+    sctx.shadowColor = "rgba(0,0,0,0.6)"; sctx.shadowBlur = 3; sctx.fillStyle = "#ffffff";
+    sctx.font = `600 11px ${fontFamily}`; sctx.textAlign = "left"; sctx.textBaseline = "top";
+    sctx.fillText(`Slice at ${H}°`, 8, 8);
+    sctx.font = `400 10px ${monoFont}`; sctx.textAlign = "right"; sctx.textBaseline = "bottom";
+    chromaGrid().forEach(({ r, label }) => { if (label) sctx.fillText(label, X(r) - 2, sh - 4); });
+    sctx.textAlign = "left"; sctx.textBaseline = "bottom";
+    [25, 50, 75].forEach(l => sctx.fillText("L" + l, 4, Y(l / 100) - 2));
+    sctx.shadowBlur = 0; sctx.shadowColor = "transparent";
+
+    // Crosshair through the point
+    const px = X(state.p / 1000), py = Y(L);
+    sctx.strokeStyle = "rgba(255,255,255,0.7)"; sctx.lineWidth = 1; sctx.setLineDash([2, 3]);
+    sctx.beginPath(); sctx.moveTo(px, 0); sctx.lineTo(px, sh); sctx.moveTo(0, py); sctx.lineTo(sw, py); sctx.stroke();
+    sctx.setLineDash([]);
+    sctx.restore();
+
+    sctx.lineWidth = 1; sctx.strokeStyle = theme.line;
+    sctx.beginPath(); sctx.roundRect(0.5, 0.5, sw - 1, sh - 1, 10); sctx.stroke();
+    drawHandle(sctx, px, py, hexOf(L, C, H));
+  }
+
+  function resizeSide() {
+    sdpr = window.devicePixelRatio || 1;
+    const b = side.getBoundingClientRect();
+    sw = b.width; sh = b.height;
+    side.width = Math.round(sw * sdpr); side.height = Math.round(sh * sdpr);
+    drawSide();
+  }
+  new ResizeObserver(resizeSide).observe(side);
+
+  let sideDrag = false;
+  function setFromSide(e) {
+    const b = side.getBoundingClientRect();
+    const r = clamp((e.clientX - b.left) / b.width, 0, 1), l = clamp(1 - (e.clientY - b.top) / b.height, 0, 1);
+    setState({ p: Math.round(r * 1000), l: Math.round(l * 1000) / 10 });
+  }
+  side.addEventListener("pointerdown", e => { sideDrag = true; side.setPointerCapture(e.pointerId); setFromSide(e); });
+  side.addEventListener("pointermove", e => { if (sideDrag) setFromSide(e); });
+  side.addEventListener("pointerup", () => { sideDrag = false; });
+  side.addEventListener("pointercancel", () => { sideDrag = false; });
+
+  // ---- Version switcher (bookmarkable as #sliders, #knob or #vector) ----
+  const VIEWS = {
+    sliders: "Three straight sliders: hue, chroma, lightness.",
+    knob: "Drag the ring to set hue. The left arc sets chroma and the right arc sets lightness, both increasing from bottom to top. With a keyboard, Tab to a control and use the arrow keys.",
+    vector: "A point on a plane around an origin. Its angle sets hue (0° at the top, clockwise) and its distance sets chroma. The dashed line is the edge of what screens can show. Three ways to set lightness: scroll or pinch on the plane (up or spread for lighter), the L slider, or drag in the side view, which is a slice at the current hue with chroma across and lightness up."
+  };
+  const tabs = [...document.querySelectorAll('.tabs [role="tab"]')];
+  function showView(name) {
+    if (!VIEWS[name]) name = "sliders";
+    tabs.forEach(t => {
+      const on = t.dataset.view === name;
+      t.setAttribute("aria-selected", String(on));
+      t.tabIndex = on ? 0 : -1;
+      $("view-" + t.dataset.view).hidden = !on;
+    });
+    $("caption").textContent = VIEWS[name];
+    store.set("ok-view", name);
+    draw();
+    drawPlane();
+    drawSide();
+  }
+  tabs.forEach((t, i) => {
+    t.addEventListener("click", () => { showView(t.dataset.view); history.replaceState(null, "", "#" + t.dataset.view); });
+    t.addEventListener("keydown", e => {
+      const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+      if (!d) return;
+      const next = tabs[(i + d + tabs.length) % tabs.length];
+      next.focus(); next.click();
+    });
+  });
+
+  // ---- Chroma mode switch: converts the position so the color on screen stays the same ----
+  function setChromaMode(mode) {
+    if (mode === chromaMode) return;
+    const L = state.l / 100, H = state.h, mc = maxChroma(L, H);
+    const shown = Math.min(chromaAt(state.p, L, H), mc);
+    chromaMode = mode;
+    store.set("ok-chroma-mode", mode);
+    fieldL = null; sfieldH = null;               // color fields depend on the mode
+    setState({ p: mode === "relative" ? (mc > 0 ? Math.round(1000 * shown / mc) : 0) : chromaToPos(shown) });
+  }
+  const modeBtns = [...document.querySelectorAll("[data-mode]")];
+  const syncModeBtns = () => modeBtns.forEach(b => b.setAttribute("aria-checked", String(b.dataset.mode === chromaMode)));
+  modeBtns.forEach(b => b.addEventListener("click", () => { setChromaMode(b.dataset.mode); syncModeBtns(); }));
+  syncModeBtns();
+
+  showView(location.hash.slice(1) || store.get("ok-view") || "sliders");
+  render();
+  if (document.fonts) document.fonts.ready.then(draw);
+</script>

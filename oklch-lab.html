@@ -1,0 +1,864 @@
+<title>OKLCH Lab</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: single column; header with a version switcher, then the active version's panel.
+     Every version edits one shared OKLCH color, which also sets the page background. */
+  :root {
+    --bg: #f6f6f8;
+    --fg: #1c1d24;
+    --muted: #6a6c7a;
+    --line: #dcdde4;
+    --surface: #ffffff;
+    --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #15161b; --fg: #ececf1; --muted: #9a9cab; --line: #2c2e38; --surface: #1d1e25; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --bg: #15161b; --fg: #ececf1; --muted: #9a9cab; --line: #2c2e38; --surface: #1d1e25; color-scheme: dark; }
+
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 48px 56px;
+  }
+  [hidden] { display: none !important; }   /* author display rules (e.g. .panel flex) would otherwise override hidden */
+  main { max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; }
+  header { display: flex; flex-direction: column; gap: 16px; }
+  header h1 { font-size: 1.9rem; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+  .title-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 16px; margin-bottom: 6px; }
+  .mode-row.bg-row > span:first-child { min-width: 0; font-weight: 400; color: var(--muted); }
+  header p { margin: 0; color: var(--muted); max-width: 62ch; }
+  :focus-visible { outline: 2px solid var(--fg); outline-offset: 3px; }
+
+  /* Version switcher */
+  .tabs { display: inline-flex; flex-wrap: wrap; align-self: flex-start; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; background: var(--surface); }
+  .tabs button {
+    font: inherit; font-size: 0.85rem; font-weight: 600; color: var(--fg); background: transparent;
+    border: 0; padding: 6px 16px; cursor: pointer;
+  }
+  .tabs button .n { font-family: var(--mono); font-weight: 400; color: var(--muted); margin-right: 6px; }
+  .tabs button[aria-selected="true"], .tabs button[aria-checked="true"] { background: var(--fg); color: var(--bg); }
+  .mode-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 0.85rem; font-weight: 600; }
+  .mode-row > span:first-child { min-width: 5.5em; }
+  .strength { display: inline-flex; align-items: center; gap: 8px; font-weight: 400; color: var(--muted); }
+  .strength input { width: 120px; margin: 0; accent-color: var(--fg); }
+  .strength output { font-family: var(--mono); font-size: 0.8rem; min-width: 3ch; }
+  .tabs button[aria-selected="true"] .n { color: inherit; opacity: 0.7; }
+  .tabs button:focus-visible { outline-offset: -4px; }
+  .caption { font-size: 0.85rem; color: var(--muted); margin: 0; }
+
+  .panel {
+    display: flex; flex-direction: column; gap: 16px; padding: 20px; min-width: 0;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 12px;
+  }
+
+  /* Version 1: sliders */
+  .ctl { display: grid; grid-template-columns: 6em minmax(0, 1fr) 7ch; align-items: center; gap: 12px; font-size: 0.9rem; font-weight: 600; }
+  .ctl output { font-family: var(--mono); font-weight: 400; font-size: 0.85rem; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+  .ctl input[type="range"] {
+    -webkit-appearance: none; appearance: none; width: 100%; height: 14px; margin: 0;
+    border-radius: 999px; border: 1px solid var(--line); cursor: pointer;
+  }
+  .ctl input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: var(--surface); border: 2px solid var(--fg); }
+  .ctl input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--surface); border: 2px solid var(--fg); }
+  @media (max-width: 420px) {
+    .ctl { grid-template-columns: minmax(0, 1fr) 7ch; }
+    .ctl input[type="range"] { grid-column: 1 / -1; grid-row: 2; }
+  }
+
+  /* Version 2: knob */
+  #dial { display: block; width: 100%; max-width: 300px; aspect-ratio: 1; margin: 0 auto; touch-action: none; cursor: pointer; }
+  /* Keyboard path for the knob: real range inputs, visually hidden; the dial draws a focus ring for whichever is focused */
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; margin: 0; }
+
+  /* Version 3: vector */
+  .vec-row { display: flex; flex-wrap: wrap; justify-content: center; align-items: stretch; gap: 16px; }
+  .plane-wrap { flex: 1 1 240px; max-width: 300px; min-width: 0; align-self: center; }
+  #plane { display: block; width: 100%; aspect-ratio: 1; touch-action: none; cursor: crosshair; }
+  /* Hide the cursor mid-drag so it doesn't cover the handle or the color under it */
+  #dial.dragging, #plane.dragging, input[type="range"]:active { cursor: none; }
+  .lcol { flex: 0 0 40px; display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 600; }
+  .lcol output { font-family: var(--mono); font-weight: 400; font-size: 0.7rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #v-light {
+    writing-mode: vertical-lr; direction: rtl; -webkit-appearance: none; appearance: none;
+    flex: 1; width: 14px; min-height: 180px; margin: 0; border-radius: 999px; border: 1px solid var(--line); cursor: pointer;
+  }
+  #v-light::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: var(--surface); border: 2px solid var(--fg); }
+  #v-light::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--surface); border: 2px solid var(--fg); }
+  .coords { margin: 0; text-align: center; font-family: var(--mono); font-size: 0.85rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: pre; }
+
+  /* Shared readout */
+  .readout { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-family: var(--mono); border-top: 1px solid var(--line); padding-top: 12px; }
+  .readout .hex { font-size: 1rem; color: var(--fg); user-select: all; }
+  .readout .alt { font-size: 0.8rem; color: var(--muted); user-select: all; }
+  .gamut { font-family: var(--sans); font-size: 0.8rem; color: var(--muted); }
+</style>
+
+<main>
+  <header>
+    <div>
+      <div class="title-row">
+        <h1>OKLCH Lab</h1>
+        <!-- Page setting, kept apart from the color controls below -->
+        <div class="mode-row bg-row">
+          <span id="bg-label">Background</span>
+          <div class="tabs" role="radiogroup" aria-labelledby="bg-label">
+            <button type="button" role="radio" data-bg="color">Color</button>
+            <button type="button" role="radio" data-bg="white">White</button>
+            <button type="button" role="radio" data-bg="black">Black</button>
+          </div>
+        </div>
+      </div>
+      <p>Different control designs for the same OKLCH color. Every version edits one shared color, which also sets the page background (or switch the background to plain white or black), so you can switch versions and compare them directly. Chroma is either absolute (0 to 0.37, the same scale for every hue) or relative (a percentage of the most that hue can reach on screen at the current lightness, so every hue feels equally intense). Lightness is either absolute (linear) or relative, which gives more slider travel to the lightness band where the current hue is most colorful, more so the more chroma you pick.</p>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Version">
+      <button type="button" role="tab" id="tab-sliders" aria-controls="view-sliders" data-view="sliders"><span class="n">1</span>Sliders</button>
+      <button type="button" role="tab" id="tab-knob" aria-controls="view-knob" data-view="knob"><span class="n">2</span>Knob</button>
+      <button type="button" role="tab" id="tab-vector" aria-controls="view-vector" data-view="vector"><span class="n">3</span>Vector</button>
+    </div>
+    <div class="mode-row">
+      <span id="cm-label">Chroma</span>
+      <div class="tabs" role="radiogroup" aria-labelledby="cm-label">
+        <button type="button" role="radio" data-mode="absolute">Absolute</button>
+        <button type="button" role="radio" data-mode="relative">Relative</button>
+      </div>
+    </div>
+    <div class="mode-row">
+      <span id="lm-label">Lightness</span>
+      <div class="tabs" role="radiogroup" aria-labelledby="lm-label">
+        <button type="button" role="radio" data-lmode="absolute">Absolute</button>
+        <button type="button" role="radio" data-lmode="relative">Relative</button>
+      </div>
+      <label class="strength" id="lm-strength-wrap" for="lm-strength" hidden>Strength<input type="range" id="lm-strength" min="0" max="10" step="0.1"><output id="lm-strength-v" for="lm-strength"></output></label>
+    </div>
+    <div class="mode-row">
+      <span>Handle</span>
+      <label class="strength" for="handle-size">Size<input type="range" id="handle-size" min="24" max="64" step="1"><output id="handle-size-v" for="handle-size"></output></label>
+    </div>
+    <div class="mode-row">
+      <span id="grid-label">Grid</span>
+      <div class="tabs" role="radiogroup" aria-labelledby="grid-label">
+        <button type="button" role="radio" data-grid="show">Show</button>
+        <button type="button" role="radio" data-grid="hide">Hide</button>
+      </div>
+    </div>
+    <p class="caption" id="caption"></p>
+  </header>
+
+  <section class="panel" id="view-sliders" role="tabpanel" aria-labelledby="tab-sliders" hidden>
+    <label class="ctl" for="s-hue"><span>Hue</span><input type="range" id="s-hue" min="0" max="360" step="1"><output id="s-hue-v" for="s-hue"></output></label>
+    <label class="ctl" for="s-chroma"><span>Chroma</span><input type="range" id="s-chroma" min="0" max="1000" step="1"><output id="s-chroma-v" for="s-chroma"></output></label>
+    <label class="ctl" for="s-light"><span>Lightness</span><input type="range" id="s-light" min="0" max="100" step="0.1"><output id="s-light-v" for="s-light"></output></label>
+  </section>
+
+  <section class="panel" id="view-knob" role="tabpanel" aria-labelledby="tab-knob" hidden>
+    <canvas id="dial" aria-hidden="true"></canvas>
+    <label class="sr" for="k-hue">Hue<input type="range" id="k-hue" min="0" max="360" step="1"></label>
+    <label class="sr" for="k-chroma">Chroma<input type="range" id="k-chroma" min="0" max="1000" step="1"></label>
+    <label class="sr" for="k-light">Lightness<input type="range" id="k-light" min="0" max="100" step="0.1"></label>
+  </section>
+
+  <section class="panel" id="view-vector" role="tabpanel" aria-labelledby="tab-vector" hidden>
+    <div class="mode-row">
+      <span id="vls-label">L slider</span>
+      <div class="tabs" role="radiogroup" aria-labelledby="vls-label">
+        <button type="button" role="radio" data-vls="show">Show</button>
+        <button type="button" role="radio" data-vls="hide">Hide</button>
+      </div>
+    </div>
+    <div class="vec-row">
+      <div class="plane-wrap"><canvas id="plane" aria-hidden="true"></canvas></div>
+      <label class="lcol" id="v-lcol" for="v-light"><span>L</span><input type="range" id="v-light" min="0" max="100" step="0.1" aria-label="Lightness"><output id="v-light-v" for="v-light"></output></label>
+    </div>
+    <label class="sr" for="v-hue">Hue<input type="range" id="v-hue" min="0" max="360" step="1"></label>
+    <label class="sr" for="v-chroma">Chroma<input type="range" id="v-chroma" min="0" max="1000" step="1"></label>
+    <p class="coords" id="v-coords"></p>
+  </section>
+
+  <div class="readout">
+    <span class="hex" id="o-hex"></span>
+    <span class="alt" id="o-alt"></span>
+    <span class="gamut" id="o-gamut" hidden></span>
+  </div>
+</main>
+
+<script>
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} }
+  };
+  const $ = id => document.getElementById(id);
+  const root = document.documentElement;
+
+  // ---- Color math (sRGB channels are 0..1) ----
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const range = (a, b, step) => { const r = []; for (let v = a; v <= b + 1e-9; v += step) r.push(v); return r; };
+  const toHex = rgb => "#" + rgb.map(v => Math.round(clamp(v, 0, 1) * 255).toString(16).padStart(2, "0")).join("");
+  const grad = hexes => `linear-gradient(to right, ${hexes.join(", ")})`;
+  const toGamma = v => v <= 0.0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - 0.055;
+  // OKLCH (L 0..1) -> linear sRGB, may fall outside 0..1
+  function oklchToLinear(L, C, H) {
+    const hr = H * Math.PI / 180, a = C * Math.cos(hr), b = C * Math.sin(hr);
+    const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+    const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+    const s = (L - 0.0894841775 * a - 1.2914855480 * b) ** 3;
+    return [
+       4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+      -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+      -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s
+    ];
+  }
+  const inGamut = rgb => rgb.every(v => v >= -1e-5 && v <= 1 + 1e-5);
+  // Gamut-maps by lowering chroma (keeping lightness and hue) until the color fits sRGB
+  function oklchToRgb(L, C, H) {
+    let c = C;
+    if (!inGamut(oklchToLinear(L, C, H))) {
+      let lo = 0, hi = C;
+      for (let i = 0; i < 24; i++) { const mid = (lo + hi) / 2; if (inGamut(oklchToLinear(L, mid, H))) lo = mid; else hi = mid; }
+      c = lo;
+    }
+    return { rgb: oklchToLinear(L, c, H).map(v => toGamma(clamp(v, 0, 1))), c, clipped: c < C - 1e-4 };
+  }
+  const hexOf = (L, C, H) => toHex(oklchToRgb(L, C, H).rgb);
+
+  // ---- Chroma scale: controls work in positions 0..1000, mapped to chroma 0..C_MAX ----
+  // Scales live in a table so a future "mode" (e.g. backgrounds) can swap in one that favors low chroma.
+  const C_MAX = 0.37;                                                      // covers every sRGB color
+  const SCALES = {
+    linear: { toC: p => C_MAX * p / 1000, toPos: c => 1000 * clamp(c, 0, C_MAX) / C_MAX },
+    exponential: {
+      toC: p => C_MAX * (Math.pow(101, p / 1000) - 1) / 100,
+      toPos: c => 1000 * Math.log(clamp(c, 0, C_MAX) / C_MAX * 100 + 1) / Math.log(101)
+    }
+  };
+  let scale = SCALES.linear;
+  const posToChroma = p => scale.toC(p);
+  const chromaToPos = c => Math.round(scale.toPos(c));
+
+  // sRGB gamut boundary: the most chroma a screen can show at this lightness (0..1) and hue
+  const maxChroma = (L, H) => {
+    let lo = 0, hi = C_MAX;
+    for (let i = 0; i < 20; i++) { const m = (lo + hi) / 2; if (inGamut(oklchToLinear(L, m, H))) lo = m; else hi = m; }
+    return lo;
+  };
+  // Chroma mode. Absolute: position 0..1000 is a share of C_MAX for every hue.
+  // Relative: position is a share of maxChroma at the current lightness and hue, so equal positions feel equally intense.
+  let chromaMode = store.get("ok-chroma-mode") === "relative" ? "relative" : "absolute";
+  const chromaAt = (p, L, H) => chromaMode === "relative" ? maxChroma(L, H) * p / 1000 : posToChroma(p);
+  const chromaLabel = (C, p) => chromaMode === "relative" ? `${Math.round(p / 10)}%` : C.toFixed(3);
+
+  // ---- Shared state: hue in degrees, chroma as slider position 0..1000, lightness in % ----
+  const num = k => { const v = parseFloat(store.get(k)); return Number.isFinite(v) ? v : null; };
+  const startDark = root.dataset.theme === "dark" || (!root.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+  // A chroma position saved under the old exponential scale is converted so the color stays the same
+  const savedP = num("ok-c");
+  const initialP = savedP === null ? chromaToPos(0.01)
+    : store.get("ok-scale") === "linear" ? savedP : chromaToPos(SCALES.exponential.toC(savedP));
+  store.set("ok-scale", "linear");
+  const state = {
+    h: num("ok-h") ?? 270,
+    p: initialP,
+    l: num("ok-l") ?? (startDark ? 18 : 97.5)
+  };
+  let theme = { fg: "#1c1d24", muted: "#3f414c", line: "#dcdde4" };
+
+  // ---- Lightness mode. state.l is always the real lightness; only the controls' spacing changes. ----
+  // Absolute: controls move linearly in L. Relative: slider travel at each lightness is weighted by
+  // exp(strength × share × maxChroma / peak), so the band around the hue's most colorful lightness gets more room,
+  // and higher strengths keep narrowing it toward that peak. share is the current chroma as a fraction of the
+  // hue's peak, so a gray gets a plain linear scale.
+  let lightMode = store.get("ok-light-mode") === "relative" ? "relative" : "absolute";
+  let lightStrength = num("ok-light-strength") ?? 2;
+  const LN = 200;                                   // lightness samples per curve
+  const edgeCache = new Map();                      // hue -> max chroma at each sample, plus its peak
+  function hueEdge(H) {
+    let e = edgeCache.get(H);
+    if (!e) {
+      const mc = range(0, LN, 1).map(i => maxChroma(i / LN, H));
+      e = { mc, peak: Math.max(...mc) };
+      edgeCache.set(H, e);
+    }
+    return e;
+  }
+  // Doesn't depend on lightness, so the curve holds still while lightness is being dragged
+  const chromaShare = e => chromaMode === "relative" ? state.p / 1000 : Math.min(1, posToChroma(state.p) / e.peak);
+  let curveKey = "", curveT = null;
+  function lightCurve() {
+    const H = state.h, e = hueEdge(H), f = chromaShare(e), key = `${H}|${f}|${lightStrength}`;
+    if (key !== curveKey) {
+      const g = lightStrength * f / e.peak, T = [0];
+      for (let i = 1; i <= LN; i++) T.push(T[i - 1] + Math.exp(g * (e.mc[i] + e.mc[i - 1]) / 2));
+      curveT = T.map(v => v / T[LN]); curveKey = key;
+    }
+    return curveT;
+  }
+  // Lightness L (0..1) <-> control position t (0..1)
+  function lightToT(L) {
+    if (lightMode === "absolute") return L;
+    const T = lightCurve(), x = clamp(L, 0, 1) * LN, i = Math.min(LN - 1, Math.floor(x));
+    return T[i] + (T[i + 1] - T[i]) * (x - i);
+  }
+  function tToLight(t) {
+    if (lightMode === "absolute") return t;
+    const T = lightCurve(); t = clamp(t, 0, 1);
+    let lo = 0, hi = LN;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (T[m] <= t) lo = m; else hi = m; }
+    return (lo + (t - T[lo]) / (T[hi] - T[lo])) / LN;
+  }
+  const setT = t => setState({ l: Math.round(tToLight(clamp(t, 0, 1)) * 1000) / 10 });
+  const lightPos = () => lightToT(state.l / 100);
+  // Grid switch: markers on every control plus the vector plane's axes and rings (falls back to the old Vector-only setting)
+  let showGrid = (store.get("ok-grid") ?? store.get("ok-vec-grid")) !== "hide";
+  // Marker positions (t = 0..1 along a control) shared by the sliders and the knob; strong ones are drawn bolder
+  const hueMarks = () => range(0, 330, 30).map(h => ({ t: h / 360, strong: h % 90 === 0 }));
+  const chromaMarks = () => chromaGrid().map(({ r, label }) => ({ t: r, strong: chromaMode === "relative" ? r === 0.5 : !!label }));
+  const lightMarks = () => range(10, 90, 10).map(l => ({ t: lightToT(l / 100), strong: l === 50 }));
+  // Tick marks layered over a slider's color track, inset by the thumb's radius so each lines up with the thumb's center
+  function tickLayer(marks, dir = "to right") {
+    if (!showGrid) return "linear-gradient(transparent, transparent)";
+    const at = (t, dx) => `calc(11px + ${t.toFixed(4)} * (100% - 22px) + ${dx}px)`;
+    const stops = marks.filter(m => m.t > 0.001 && m.t < 0.999).map(({ t, strong }) => {
+      const k = `rgba(0,0,0,${strong ? 0.55 : 0.3})`, w = `rgba(255,255,255,${strong ? 0.9 : 0.55})`;
+      return `transparent ${at(t, -1)}, ${k} ${at(t, -1)}, ${k} ${at(t, 0)}, ${w} ${at(t, 0)}, ${w} ${at(t, 1)}, transparent ${at(t, 1)}`;
+    });
+    return `linear-gradient(${dir}, transparent, ${stops.join(", ")}, transparent)`;
+  }
+  // Gradient stops for a lightness control, spaced to match the lightness mode
+  const lightStops = H => range(0, 1, 0.05).map(t => { const l = tToLight(t); return hexOf(l, chromaAt(state.p, l, H), H); });
+
+  function setState(patch) {
+    Object.assign(state, patch);
+    store.set("ok-h", state.h); store.set("ok-c", state.p); store.set("ok-l", state.l);
+    render();
+  }
+
+  function render() {
+    const H = state.h, L = state.l, C = chromaAt(state.p, L / 100, H);
+    const res = oklchToRgb(L / 100, C, H);
+    const hex = toHex(res.rgb);
+    applyPage(L / 100, res.c, H, hex);
+    renderSliders(H, C, L);
+    renderKnob(H, C, L);
+    renderVector(H, C, L);
+    $("o-hex").textContent = hex;
+    $("o-alt").textContent = `oklch(${L.toFixed(1)}% ${res.c.toFixed(3)} ${H})`;
+    $("o-gamut").hidden = !res.clipped;
+    $("o-gamut").textContent = `Outside sRGB, shown at chroma ${res.c.toFixed(3)}`;
+  }
+
+  // Surfaces and borders are offset in OKLCH lightness so they track perceived brightness
+  // Background switch: the chosen color, or plain white or black (themed as a gray at L 1 or 0)
+  let bgMode = ["white", "black"].includes(store.get("ok-bg")) ? store.get("ok-bg") : "color";
+  function applyPage(L, C, H, hex) {
+    if (bgMode !== "color") { L = bgMode === "white" ? 1 : 0; C = 0; hex = bgMode === "white" ? "#ffffff" : "#000000"; }
+    const s = root.style;
+    const dark = L < 0.6;
+    theme = {
+      fg: dark ? "#ececf1" : "#1c1d24",
+      muted: dark ? "#b8bac6" : "#3f414c",
+      line: hexOf(clamp(L + (dark ? 0.14 : -0.12), 0, 1), C, H)
+    };
+    s.setProperty("--bg", hex);
+    s.setProperty("--surface", hexOf(clamp(L + (dark ? 0.05 : 0.03), 0, 1), C, H));
+    s.setProperty("--line", theme.line);
+    s.setProperty("--fg", theme.fg);
+    s.setProperty("--muted", theme.muted);
+    s.colorScheme = dark ? "dark" : "light";
+  }
+
+  // ---- Version 1: sliders ----
+  const sl = { h: $("s-hue"), c: $("s-chroma"), l: $("s-light") };
+  sl.h.addEventListener("input", () => setState({ h: +sl.h.value }));
+  sl.c.addEventListener("input", () => setState({ p: +sl.c.value }));
+  sl.l.addEventListener("input", () => setT(+sl.l.value / 100));
+
+  function renderSliders(H, C, L) {
+    sl.h.value = H; sl.c.value = state.p; sl.l.value = lightPos() * 100;
+    sl.h.style.background = tickLayer(hueMarks()) + ", " + grad(range(0, 360, 15).map(x => hexOf(L / 100, chromaAt(state.p, L / 100, x), x)));
+    sl.c.style.background = tickLayer(chromaMarks()) + ", " + grad(range(0, 1000, 100).map(p => hexOf(L / 100, chromaAt(p, L / 100, H), H)));
+    sl.l.style.background = tickLayer(lightMarks()) + ", " + grad(lightStops(H));
+    $("s-hue-v").textContent = H + "°";
+    $("s-chroma-v").textContent = chromaLabel(C, state.p);
+    $("s-light-v").textContent = L.toFixed(1) + "%";
+  }
+
+  // ---- Version 2: knob ----
+  // Angles are compass degrees: 0 = top, increasing clockwise. Radii are fractions of the dial's half-width.
+  const DISC = 0.44, HUE_IN = 0.50, HUE_OUT = 0.60, ARC_IN = 0.75, ARC_OUT = 0.85;
+  const L_START = 170, C_START = 190, SPAN = 160;   // lightness: 170° (bottom) -> 10° (top); chroma: 190° -> 350°
+  const lightAngle = t => L_START - SPAN * t;
+  const chromaAngle = t => C_START + SPAN * t;
+
+  const kn = { h: $("k-hue"), c: $("k-chroma"), l: $("k-light") };
+  kn.h.addEventListener("input", () => setState({ h: +kn.h.value }));
+  kn.c.addEventListener("input", () => setState({ p: +kn.c.value }));
+  kn.l.addEventListener("input", () => setT(+kn.l.value / 100));
+  Object.values(kn).forEach(el => { el.addEventListener("focus", draw); el.addEventListener("blur", draw); });
+
+  const canvas = $("dial"), ctx = canvas.getContext("2d");
+  let size = 0, dpr = 1;
+  const fontFamily = getComputedStyle(document.body).fontFamily;
+  const rad = deg => (deg - 90) * Math.PI / 180;
+
+  function renderKnob(H, C, L) {
+    kn.h.value = H; kn.c.value = state.p; kn.l.value = lightPos() * 100;
+    draw();
+  }
+  function bandPath(r0, r1, a0, a1) {
+    const c = size / 2, R = size / 2;
+    ctx.beginPath();
+    ctx.arc(c, c, r1 * R, rad(a0), rad(a1));
+    ctx.arc(c, c, r0 * R, rad(a1), rad(a0), true);
+    ctx.closePath();
+  }
+  // Same band, but with semicircular end caps
+  function roundBandPath(r0, r1, a0, a1) {
+    const c = size / 2, R = size / 2, rm = (r0 + r1) / 2 * R, w = (r1 - r0) / 2 * R;
+    const cap = (a, from, to) => ctx.arc(c + Math.cos(rad(a)) * rm, c + Math.sin(rad(a)) * rm, w, from, to);
+    ctx.beginPath();
+    ctx.arc(c, c, r1 * R, rad(a0), rad(a1));
+    cap(a1, rad(a1), rad(a1) + Math.PI);
+    ctx.arc(c, c, r0 * R, rad(a1), rad(a0), true);
+    cap(a0, rad(a0) + Math.PI, rad(a0) + 2 * Math.PI);
+    ctx.closePath();
+  }
+  // A round handle (diameter set by the Handle size slider) showing lightness: a black band grows inward from the
+  // edge, from nothing at L 100% to the whole handle at L 0%. Inside it, a white ring that thins with lightness
+  // (2px at L 100%, gone at L 0%) so the color stays visible as the band closes in, and then the color.
+  let handleD = clamp(num("ok-handle") ?? 24, 24, 64);
+  function drawDot(g, x, y, color, L) {
+    const ro = handleD / 2, w = ro * (1 - clamp(L, 0, 1)), ri = ro - w;
+    g.beginPath(); g.arc(x, y, ro, 0, Math.PI * 2);
+    g.fillStyle = color; g.fill();
+    if (w > 0.25) {
+      g.beginPath(); g.arc(x, y, ro - w / 2, 0, Math.PI * 2);
+      g.lineWidth = w; g.strokeStyle = "rgba(0,0,0,0.8)"; g.stroke();
+    }
+    const wr = Math.min(2 * clamp(L, 0, 1), ri);
+    if (wr > 0.2) {
+      g.beginPath(); g.arc(x, y, ri - wr / 2, 0, Math.PI * 2);
+      g.lineWidth = wr; g.strokeStyle = "#ffffff"; g.stroke();
+    }
+  }
+  function handle(angle, r, color) {
+    const c = size / 2, R = size / 2, a = rad(angle);
+    drawDot(ctx, c + Math.cos(a) * r * R, c + Math.sin(a) * r * R, color, state.l / 100);
+  }
+  // A radial marker across a band, dark under light so it reads on any color
+  function tick(angle, r0, r1, strong) {
+    const c = size / 2, R = size / 2, x = Math.cos(rad(angle)), y = Math.sin(rad(angle));
+    const line = () => { ctx.beginPath(); ctx.moveTo(c + x * r0 * R, c + y * r0 * R); ctx.lineTo(c + x * r1 * R, c + y * r1 * R); ctx.stroke(); };
+    ctx.lineWidth = 2.5; ctx.strokeStyle = `rgba(0,0,0,${strong ? 0.45 : 0.25})`; line();
+    ctx.lineWidth = 1; ctx.strokeStyle = `rgba(255,255,255,${strong ? 0.9 : 0.6})`; line();
+  }
+  function focusRing(r0, r1, a0, a1, input, round) {
+    if (!input.matches(":focus-visible")) return;
+    (round ? roundBandPath : bandPath)(r0 - 0.03, r1 + 0.03, a0, a1);
+    ctx.lineWidth = 2; ctx.strokeStyle = theme.fg; ctx.stroke();
+  }
+
+  function draw() {
+    if (!size || $("view-knob").hidden) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, size, size);
+    const H = state.h, P = state.p, L = state.l / 100, C = chromaAt(P, L, H);
+    const c = size / 2, R = size / 2;
+
+    // Hue ring at current chroma and lightness
+    for (let h = 0; h < 360; h += 2) { bandPath(HUE_IN, HUE_OUT, h, h + 2.6); ctx.fillStyle = hexOf(L, chromaAt(P, L, h + 1), h + 1); ctx.fill(); }
+    bandPath(HUE_IN, HUE_OUT, 0, 360); ctx.lineWidth = 1; ctx.strokeStyle = theme.line; ctx.stroke();
+
+    // Chroma arc (left) and lightness arc (right): 80 slices each, clipped to a band with rounded ends.
+    // The end slices are stretched past the ends (by the cap's angular width) so the caps get filled too.
+    const N = 80, cap = (ARC_OUT - ARC_IN) / (ARC_IN + ARC_OUT) * 180 / Math.PI + 1;
+    const C_END = C_START + SPAN, L_END = L_START - SPAN;
+    ctx.save(); roundBandPath(ARC_IN, ARC_OUT, C_START, C_END); ctx.clip();
+    for (let k = 0; k < N; k++) {
+      const t0 = k / N, t1 = (k + 1) / N, tm = (k + 0.5) / N;
+      bandPath(ARC_IN, ARC_OUT, chromaAngle(t0) - (k === 0 ? cap : 0), chromaAngle(t1) + (k < N - 1 ? 0.6 : cap));
+      ctx.fillStyle = hexOf(L, chromaAt(tm * 1000, L, H), H); ctx.fill();
+    }
+    ctx.restore();
+    ctx.save(); roundBandPath(ARC_IN, ARC_OUT, L_END, L_START); ctx.clip();
+    for (let k = 0; k < N; k++) {
+      const t0 = k / N, t1 = (k + 1) / N, tm = (k + 0.5) / N;
+      bandPath(ARC_IN, ARC_OUT, lightAngle(t1) - (k < N - 1 ? 0.6 : cap), lightAngle(t0) + (k === 0 ? cap : 0));
+      const lm = tToLight(tm);
+      ctx.fillStyle = hexOf(lm, chromaAt(P, lm, H), H); ctx.fill();
+    }
+    ctx.restore();
+    ctx.lineWidth = 1; ctx.strokeStyle = theme.line;
+    roundBandPath(ARC_IN, ARC_OUT, C_START, C_END); ctx.stroke();
+    roundBandPath(ARC_IN, ARC_OUT, L_END, L_START); ctx.stroke();
+
+    // Markers: hue every 30°, chroma at the vector plane's ring values, lightness every 10% (following the lightness curve)
+    if (showGrid) {
+      hueMarks().forEach(({ t, strong }) => tick(t * 360, HUE_IN, HUE_OUT, strong));
+      chromaMarks().forEach(({ t, strong }) => tick(chromaAngle(t), ARC_IN, ARC_OUT, strong));
+      lightMarks().forEach(({ t, strong }) => tick(lightAngle(t), ARC_IN, ARC_OUT, strong));
+    }
+
+    focusRing(HUE_IN, HUE_OUT, 0, 360, kn.h, false);
+    focusRing(ARC_IN, ARC_OUT, C_START, C_END, kn.c, true);
+    focusRing(ARC_IN, ARC_OUT, L_END, L_START, kn.l, true);
+
+    // Center disc shows the current color
+    const hex = hexOf(L, C, H);
+    ctx.beginPath(); ctx.arc(c, c, DISC * R, 0, Math.PI * 2);
+    ctx.fillStyle = hex; ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = theme.line; ctx.stroke();
+    ctx.fillStyle = L < 0.6 ? "#ececf1" : "#1c1d24";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    // Hex on top, then hue, chroma and lightness
+    const mono = getComputedStyle(root).getPropertyValue("--mono");
+    ctx.font = `600 ${Math.round(0.12 * R)}px ${fontFamily}`;
+    ctx.fillText(hex, c, c - 0.17 * R);
+    ctx.font = `400 ${Math.round(0.08 * R)}px ${mono}`;
+    ctx.fillText(`H ${H}°`, c, c - 0.03 * R);
+    ctx.fillText(`C ${chromaLabel(C, P)}`, c, c + 0.09 * R);
+    ctx.fillText(`L ${(L * 100).toFixed(1)}%`, c, c + 0.21 * R);
+
+    // End labels for the arcs
+    ctx.fillStyle = theme.muted;
+    ctx.font = `600 ${Math.round(0.08 * R)}px ${fontFamily}`;
+    const lab = (txt, angle, r) => { const a = rad(angle); ctx.fillText(txt, c + Math.cos(a) * r * R, c + Math.sin(a) * r * R); };
+    lab("C", 196, 0.94);
+    lab("L", 164, 0.94);
+
+    // Handles
+    const mid = (HUE_IN + HUE_OUT) / 2, amid = (ARC_IN + ARC_OUT) / 2;
+    handle(H, mid, hex);
+    handle(chromaAngle(P / 1000), amid, hex);
+    handle(lightAngle(lightPos()), amid, hex);
+  }
+
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    size = canvas.getBoundingClientRect().width;
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+    draw();
+  }
+  new ResizeObserver(resize).observe(canvas);
+
+  let active = null;
+  function polar(e) {
+    const r = canvas.getBoundingClientRect();
+    const dx = e.clientX - r.left - r.width / 2, dy = e.clientY - r.top - r.height / 2;
+    return { dx, dy, dist: Math.hypot(dx, dy) / (r.width / 2), angle: (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360 };
+  }
+  function pick(p) {
+    if (p.dist > 1.02 || p.dist < 0.3) return null;
+    if (p.dist < (HUE_OUT + ARC_IN) / 2) return "h";
+    return p.dx < 0 ? "c" : "l";
+  }
+  function setFrom(p) {
+    if (active === "h") setState({ h: Math.round(p.angle) % 360 });
+    if (active === "l") {
+      const t = p.angle >= L_START - SPAN && p.angle <= L_START ? (L_START - p.angle) / SPAN : (p.dy < 0 ? 1 : 0);
+      setT(t);
+    }
+    if (active === "c") {
+      const t = p.angle >= C_START && p.angle <= C_START + SPAN ? (p.angle - C_START) / SPAN : (p.dy < 0 ? 1 : 0);
+      setState({ p: Math.round(t * 1000) });
+    }
+  }
+  canvas.addEventListener("pointerdown", e => {
+    const p = polar(e);
+    active = pick(p);
+    if (!active) return;
+    canvas.setPointerCapture(e.pointerId);
+    canvas.classList.add("dragging");
+    kn[active].focus({ preventScroll: true });
+    setFrom(p);
+  });
+  canvas.addEventListener("pointermove", e => { if (active) setFrom(polar(e)); });
+  const end = () => { active = null; canvas.classList.remove("dragging"); };
+  canvas.addEventListener("pointerup", end);
+  canvas.addEventListener("pointercancel", end);
+
+  // ---- Version 3: vector ----
+  // A point on a plane around an origin: its angle is hue (0° = up, clockwise), its distance is chroma.
+  // Distance uses the same chroma scale as the other versions.
+  const PR = 0.86;                       // plane radius as a fraction of the canvas half-width
+  const FIELD = 180;                     // resolution of the color field bitmap
+  const monoFont = getComputedStyle(root).getPropertyValue("--mono");
+  const chromaToR = c => scale.toPos(c) / 1000;
+  // Reference rings/gridlines: chroma values in absolute mode, percentages of the maximum in relative mode
+  const chromaGrid = () => chromaMode === "relative"
+    ? [0.25, 0.5, 0.75].map(r => ({ r, label: `${r * 100}%` }))
+    : [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35].map(v => ({ r: chromaToR(v), label: [0.1, 0.2, 0.3].includes(v) ? String(v) : "" }));
+
+  const pv = { h: $("v-hue"), c: $("v-chroma") };
+  pv.h.addEventListener("input", () => setState({ h: +pv.h.value }));
+  pv.c.addEventListener("input", () => setState({ p: +pv.c.value }));
+  Object.values(pv).forEach(el => { el.addEventListener("focus", drawPlane); el.addEventListener("blur", drawPlane); });
+
+  const plane = $("plane"), pctx = plane.getContext("2d");
+  const field = document.createElement("canvas");
+  field.width = field.height = FIELD;
+  let psize = 0, pdpr = 1, fieldL = null, gamutEdge = [];
+
+  // The color field only depends on lightness, so it is rebuilt only when lightness changes
+  function buildField(L) {
+    const f = field.getContext("2d"), img = f.createImageData(FIELD, FIELD), d = img.data, half = FIELD / 2;
+    for (let y = 0; y < FIELD; y++) for (let x = 0; x < FIELD; x++) {
+      const dx = (x + 0.5 - half) / half, dy = (y + 0.5 - half) / half, r = Math.hypot(dx, dy);
+      if (r > 1.03) continue;
+      const hue = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+      const rgb = oklchToRgb(L, chromaAt(Math.min(r, 1) * 1000, L, hue), hue).rgb;
+      const i = (y * FIELD + x) * 4;
+      d[i] = Math.round(rgb[0] * 255); d[i + 1] = Math.round(rgb[1] * 255); d[i + 2] = Math.round(rgb[2] * 255); d[i + 3] = 255;
+    }
+    f.putImageData(img, 0, 0);
+    gamutEdge = range(0, 360, 2).map(h => [h, chromaToR(maxChroma(L, h))]);
+    fieldL = L;
+  }
+
+  function renderVector(H, C, L) {
+    pv.h.value = H; pv.c.value = state.p;
+    const rel = chromaMode === "relative" ? ` (${Math.round(state.p / 10)}% of max)` : "";
+    $("v-coords").textContent = `H ${H}°  ·  C ${C.toFixed(3)}${rel}  ·  L ${L.toFixed(1)}%`;
+    vl.value = lightPos() * 100;
+    vl.style.background = `${tickLayer(lightMarks(), "to top")}, linear-gradient(to top, ${lightStops(H).join(", ")})`;
+    $("v-light-v").textContent = L.toFixed(1);
+    drawPlane();
+  }
+
+  function drawPlane() {
+    if (!psize || $("view-vector").hidden) return;
+    const H = state.h, L = state.l / 100, C = chromaAt(state.p, L, H);
+    if (fieldL !== L) buildField(L);
+    const c = psize / 2, R = PR * psize / 2;
+    const at = (h, r) => [c + Math.cos(rad(h)) * r * R, c + Math.sin(rad(h)) * r * R];
+    const ink = L < 0.6 ? "255,255,255" : "0,0,0";
+    pctx.setTransform(pdpr, 0, 0, pdpr, 0, 0);
+    pctx.clearRect(0, 0, psize, psize);
+
+    // Color field, clipped to the plane
+    pctx.save();
+    pctx.beginPath(); pctx.arc(c, c, R, 0, Math.PI * 2); pctx.clip();
+    pctx.imageSmoothingEnabled = true;
+    pctx.drawImage(field, c - R, c - R, 2 * R, 2 * R);
+    pctx.restore();
+
+    // Axes and chroma rings (can be hidden with the Grid switch)
+    if (showGrid) {
+    pctx.lineWidth = 1; pctx.strokeStyle = `rgba(${ink},0.18)`;
+    pctx.beginPath(); pctx.moveTo(c, c - R); pctx.lineTo(c, c + R); pctx.moveTo(c - R, c); pctx.lineTo(c + R, c); pctx.stroke();
+    pctx.fillStyle = `rgba(${ink},0.6)`; pctx.font = `400 10px ${monoFont}`; pctx.textAlign = "left"; pctx.textBaseline = "middle";
+    chromaGrid().forEach(({ r: rf, label }) => {
+      const r = rf * R;
+      pctx.beginPath(); pctx.arc(c, c, r, 0, Math.PI * 2); pctx.stroke();
+      if (label) pctx.fillText(label, c + 3, c - r - 6);
+    });
+    }
+
+    // sRGB gamut edge at this lightness: colors beyond the dashed line are shown at reduced chroma.
+    // In relative mode the plane's own edge is the gamut edge, so there is nothing to draw.
+    if (chromaMode === "absolute") {
+    pctx.save();
+    pctx.setLineDash([4, 3]); pctx.strokeStyle = `rgba(${ink},0.6)`; pctx.lineWidth = 1.25;
+    pctx.beginPath();
+    gamutEdge.forEach(([h, r], i) => { const [x, y] = at(h, Math.min(r, 1)); i ? pctx.lineTo(x, y) : pctx.moveTo(x, y); });
+    pctx.closePath(); pctx.stroke();
+    pctx.restore();
+    }
+
+    // Plane edge, hue labels, keyboard focus ring
+    pctx.lineWidth = 1; pctx.strokeStyle = theme.line;
+    pctx.beginPath(); pctx.arc(c, c, R, 0, Math.PI * 2); pctx.stroke();
+    pctx.fillStyle = theme.muted; pctx.font = `600 11px ${fontFamily}`; pctx.textAlign = "center";
+    if (showGrid) [0, 90, 180, 270].forEach(h => { const [x, y] = at(h, 1 + 13 / R); pctx.fillText(h + "°", x, y); });
+    if (pv.h.matches(":focus-visible") || pv.c.matches(":focus-visible")) {
+      pctx.lineWidth = 2; pctx.strokeStyle = theme.fg;
+      pctx.beginPath(); pctx.arc(c, c, R + 4, 0, Math.PI * 2); pctx.stroke();
+    }
+
+    // The vector: origin -> point (the line and origin dot hide with the grid)
+    const [px, py] = at(H, state.p / 1000), hex = hexOf(L, C, H);
+    if (showGrid) {
+      pctx.strokeStyle = `rgba(${ink},0.8)`; pctx.lineWidth = 1.5;
+      pctx.beginPath(); pctx.moveTo(c, c); pctx.lineTo(px, py); pctx.stroke();
+      pctx.fillStyle = `rgba(${ink},0.8)`;
+      pctx.beginPath(); pctx.arc(c, c, 3, 0, Math.PI * 2); pctx.fill();
+    }
+    drawDot(pctx, px, py, hex, L);
+  }
+
+  function resizePlane() {
+    pdpr = window.devicePixelRatio || 1;
+    psize = plane.getBoundingClientRect().width;
+    plane.width = plane.height = Math.round(psize * pdpr);
+    drawPlane();
+  }
+  new ResizeObserver(resizePlane).observe(plane);
+
+  // The point always follows the pointer, so the hidden cursor never drifts away from it.
+  // Ctrl locks to hue: the point turns to the pointer's angle and keeps its chroma.
+  // Alt locks to chroma: the point slides along its hue line to where the pointer projects onto that line.
+  // Modifiers are checked on every move, so they can be pressed or released mid-drag.
+  let dragging = false;
+  const lockOf = e => e.ctrlKey && !e.altKey ? "h" : e.altKey && !e.ctrlKey ? "p" : null;
+  function dragPlane(e) {
+    const b = plane.getBoundingClientRect(), R = PR * b.width / 2;
+    const dx = e.clientX - b.left - b.width / 2, dy = e.clientY - b.top - b.height / 2;
+    const h = Math.round((Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360) % 360;
+    const lock = lockOf(e);
+    if (lock === "h") return setState({ h });
+    if (lock === "p") {
+      const a = rad(state.h), along = (dx * Math.cos(a) + dy * Math.sin(a)) / R;
+      return setState({ p: Math.round(clamp(along, 0, 1) * 1000) });
+    }
+    setState({ h, p: Math.round(Math.min(Math.hypot(dx, dy) / R, 1) * 1000) });
+  }
+  // Keep a tap of Alt from moving focus to the browser's menu bar while working on the plane
+  plane.addEventListener("pointerdown", e => { if (e.altKey) e.preventDefault(); });
+  window.addEventListener("keyup", e => { if (e.key === "Alt" && plane.classList.contains("dragging")) e.preventDefault(); });
+  // One pointer drags the point; two pointers (touch pinch) change lightness. Spreading brightens.
+  const pointers = new Map();
+  let pinch = null;
+  const spread = () => { const [a, b] = [...pointers.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+  plane.addEventListener("pointerdown", e => {
+    plane.setPointerCapture(e.pointerId);
+    plane.classList.add("dragging");
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) { dragging = false; pinch = { d: spread(), t: lightPos() }; return; }
+    if (pointers.size > 2) return;
+    dragging = true;
+    pv.c.focus({ preventScroll: true });
+    dragPlane(e);
+  });
+  plane.addEventListener("pointermove", e => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pointers.size === 2) setT(pinch.t + (spread() - pinch.d) * 0.0025);
+    else if (dragging) dragPlane(e);
+  });
+  const release = e => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+    if (!pointers.size) plane.classList.remove("dragging");
+    dragging = false;
+  };
+  plane.addEventListener("pointerup", release);
+  plane.addEventListener("pointercancel", release);
+  // Scroll wheel, and trackpad pinch (which browsers report as ctrl + wheel), change lightness too
+  plane.addEventListener("wheel", e => {
+    e.preventDefault();
+    const unit = e.deltaMode === 1 ? 16 : 1;
+    setT(lightPos() - e.deltaY * unit * (e.ctrlKey ? 0.001 : 0.0002));
+  }, { passive: false });
+
+  // Lightness slider beside the plane
+  const vl = $("v-light");
+  vl.addEventListener("input", () => setT(+vl.value / 100));
+  // Switch to show or hide it, leaving scroll/pinch on the plane as the only lightness control
+  const vlsBtns = [...document.querySelectorAll("[data-vls]")];
+  function setVls(v) {
+    store.set("ok-vec-lslider", v);
+    $("v-lcol").hidden = v === "hide";
+    vlsBtns.forEach(b => b.setAttribute("aria-checked", String(b.dataset.vls === v)));
+  }
+  vlsBtns.forEach(b => b.addEventListener("click", () => setVls(b.dataset.vls)));
+  setVls(store.get("ok-vec-lslider") === "hide" ? "hide" : "show");
+  // Grid switch (header): slider ticks, knob ticks, and the plane's axes and chroma rings, on every tab
+  const gridBtns = [...document.querySelectorAll("[data-grid]")];
+  const syncGrid = () => gridBtns.forEach(b => b.setAttribute("aria-checked", String((b.dataset.grid === "show") === showGrid)));
+  gridBtns.forEach(b => b.addEventListener("click", () => {
+    showGrid = b.dataset.grid === "show";
+    store.set("ok-grid", b.dataset.grid);
+    syncGrid(); render();
+  }));
+  syncGrid();
+  const bgBtns = [...document.querySelectorAll("[data-bg]")];
+  const syncBg = () => bgBtns.forEach(b => b.setAttribute("aria-checked", String(b.dataset.bg === bgMode)));
+  bgBtns.forEach(b => b.addEventListener("click", () => {
+    bgMode = b.dataset.bg;
+    store.set("ok-bg", bgMode);
+    syncBg(); render();
+  }));
+  syncBg();
+  // Handle size slider: outer diameter of every round handle, in CSS pixels
+  const hs = $("handle-size");
+  const syncHandle = () => { hs.value = handleD; $("handle-size-v").textContent = handleD + "px"; };
+  hs.addEventListener("input", () => {
+    handleD = +hs.value;
+    store.set("ok-handle", handleD);
+    syncHandle(); render();
+  });
+  syncHandle();
+
+  // ---- Version switcher (bookmarkable as #sliders, #knob or #vector) ----
+  const VIEWS = {
+    sliders: "Three straight sliders: hue, chroma, lightness.",
+    knob: "Drag the ring to set hue. The left arc sets chroma and the right arc sets lightness, both increasing from bottom to top. With a keyboard, Tab to a control and use the arrow keys.",
+    vector: "A point on a plane around an origin. Its angle sets hue (0° at the top, clockwise) and its distance sets chroma. The dashed line is the edge of what screens can show. Set lightness by scrolling or pinching on the plane (up or spread for lighter), or with the L slider. The L slider can be hidden. Hold Ctrl while dragging to change only hue, or Alt to change only chroma (the point slides along its hue line, following the pointer)."
+  };
+  const tabs = [...document.querySelectorAll('.tabs [role="tab"]')];
+  function showView(name) {
+    if (!VIEWS[name]) name = "sliders";
+    tabs.forEach(t => {
+      const on = t.dataset.view === name;
+      t.setAttribute("aria-selected", String(on));
+      t.tabIndex = on ? 0 : -1;
+      $("view-" + t.dataset.view).hidden = !on;
+    });
+    $("caption").textContent = VIEWS[name];
+    store.set("ok-view", name);
+    draw();
+    drawPlane();
+  }
+  tabs.forEach((t, i) => {
+    t.addEventListener("click", () => { showView(t.dataset.view); history.replaceState(null, "", "#" + t.dataset.view); });
+    t.addEventListener("keydown", e => {
+      const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+      if (!d) return;
+      const next = tabs[(i + d + tabs.length) % tabs.length];
+      next.focus(); next.click();
+    });
+  });
+
+  // ---- Chroma mode switch: converts the position so the color on screen stays the same ----
+  function setChromaMode(mode) {
+    if (mode === chromaMode) return;
+    const L = state.l / 100, H = state.h, mc = maxChroma(L, H);
+    const shown = Math.min(chromaAt(state.p, L, H), mc);
+    chromaMode = mode;
+    store.set("ok-chroma-mode", mode);
+    fieldL = null;                                // the color field depends on the mode
+    setState({ p: mode === "relative" ? (mc > 0 ? Math.round(1000 * shown / mc) : 0) : chromaToPos(shown) });
+  }
+  const modeBtns = [...document.querySelectorAll("[data-mode]")];
+  const syncModeBtns = () => modeBtns.forEach(b => b.setAttribute("aria-checked", String(b.dataset.mode === chromaMode)));
+  modeBtns.forEach(b => b.addEventListener("click", () => { setChromaMode(b.dataset.mode); syncModeBtns(); }));
+  syncModeBtns();
+
+  // ---- Lightness mode switch: state.l is the real lightness, so the color stays and the thumbs move ----
+  const lmodeBtns = [...document.querySelectorAll("[data-lmode]")];
+  const strength = $("lm-strength");
+  function syncLightControls() {
+    lmodeBtns.forEach(b => b.setAttribute("aria-checked", String(b.dataset.lmode === lightMode)));
+    $("lm-strength-wrap").hidden = lightMode !== "relative";
+    strength.value = lightStrength;
+    $("lm-strength-v").textContent = lightStrength.toFixed(1);
+  }
+  lmodeBtns.forEach(b => b.addEventListener("click", () => {
+    lightMode = b.dataset.lmode;
+    store.set("ok-light-mode", lightMode);
+    syncLightControls(); render();
+  }));
+  strength.addEventListener("input", () => {
+    lightStrength = +strength.value;
+    store.set("ok-light-strength", lightStrength);
+    syncLightControls(); render();
+  });
+  syncLightControls();
+
+  showView(location.hash.slice(1) || store.get("ok-view") || "sliders");
+  render();
+  if (document.fonts) document.fonts.ready.then(draw);
+</script>

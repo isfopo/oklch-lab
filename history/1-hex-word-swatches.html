@@ -1,0 +1,390 @@
+<title>Hex Word Swatches</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: sticky palette strip on top, then one column of sections, each a wrapping grid of colour swatches */
+  :root {
+    --bg: #f6f6f8;
+    --fg: #1c1d24;
+    --muted: #6a6c7a;
+    --line: #dcdde4;
+    --surface: #ffffff;
+    --sans: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #15161b; --fg: #ececf1; --muted: #9a9cab; --line: #2c2e38; --surface: #1d1e25; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --bg: #15161b; --fg: #ececf1; --muted: #9a9cab; --line: #2c2e38; --surface: #1d1e25; color-scheme: dark; }
+  :root[data-theme="light"] { color-scheme: light; }
+
+  body {
+    background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.5;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 40px 56px;
+    transition: background-color 0.2s, color 0.2s;
+  }
+  body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+  main { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px; }
+
+  header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  header > div { min-width: 0; flex: 1 1 320px; }
+  header h1 { font-size: 1.9rem; margin: 0 0 6px; text-wrap: balance; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); max-width: 62ch; }
+
+  button {
+    font: inherit; font-size: 0.85rem; font-weight: 600; color: var(--fg); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  :focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+
+  .palette {
+    position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+    background: var(--bg); padding-block: 12px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .palette-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .strip {
+    min-height: 96px; display: flex; flex-wrap: wrap; border-radius: 12px; overflow: hidden;
+    border: 2px dashed var(--line); background: var(--surface); transition: border-color 0.15s;
+  }
+  .strip.over { border-color: var(--fg); }
+  .strip.filled { border-style: solid; }
+  .empty { margin: auto; padding: 16px; color: var(--muted); text-align: center; }
+  .strip .swatch {
+    border-radius: 0; box-shadow: none; aspect-ratio: auto; width: 120px; height: 92px; flex: 0 0 auto;
+    position: relative; cursor: grab;
+  }
+  .strip .swatch.dragging { opacity: 0.35; }
+  .strip .swatch.insert-before { box-shadow: inset 4px 0 0 var(--fg); }
+  .remove {
+    position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; padding: 0; border-radius: 50%;
+    background: rgba(0,0,0,0.25); color: #fff; border: 0; font-size: 0.9rem; line-height: 1;
+    opacity: 0; transition: opacity 0.15s;
+  }
+  .strip .swatch:hover .remove, .remove:focus-visible { opacity: 1; }
+  @media (hover: none) { .remove { opacity: 1; } }
+
+  section { display: flex; flex-direction: column; gap: 14px; }
+  h2 {
+    margin: 0; font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); padding-bottom: 8px; border-bottom: 1px solid var(--line);
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .swatch {
+    aspect-ratio: 4 / 3; max-width: 100%; border-radius: 10px; padding: 12px;
+    display: flex; flex-direction: column; justify-content: space-between;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.08); cursor: grab; user-select: none;
+  }
+  .grid .swatch:hover { transform: translateY(-2px); }
+  .grid .swatch { transition: transform 0.12s; }
+  .word { font-size: 1.35rem; font-weight: 600; text-transform: capitalize; }
+  .hex { font-family: var(--mono); font-size: 0.85rem; display: flex; justify-content: space-between; gap: 8px; }
+  .hex span:last-child:not(:first-child) { opacity: 0.7; }
+  .strip .word { font-size: 1.05rem; }
+  .strip .hex { font-size: 0.75rem; }
+  .grid .swatch { position: relative; }
+  .grid .swatch:hover, .grid .swatch:focus-visible { z-index: 3; }
+  .grid .swatch::after {
+    content: attr(data-tip); position: absolute; left: 0; right: 0; top: calc(100% + 6px);
+    padding: 8px 10px; border-radius: 8px; background: var(--fg); color: var(--bg);
+    font-family: var(--sans); font-size: 0.8rem; font-weight: 400; line-height: 1.4;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.2); pointer-events: none; opacity: 0; transition: opacity 0.12s;
+  }
+  .grid .swatch:hover::after, .grid .swatch:focus-visible::after { opacity: 1; }
+  .controls { display: flex; flex-direction: column; gap: 10px; }
+  .bg-hex { text-align: right; font-family: var(--mono); font-size: 0.85rem; color: var(--muted); }
+  .bg-control { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; font-weight: 600; }
+  .bg-control span { min-width: 6.5em; }
+  #hue-slider { background: linear-gradient(to right, hsl(0 55% 60%), hsl(60 55% 60%), hsl(120 55% 60%), hsl(180 55% 60%), hsl(240 55% 60%), hsl(300 55% 60%), hsl(360 55% 60%)); }
+  .bg-control output { font-family: var(--mono); font-weight: 400; font-size: 0.8rem; color: var(--muted); min-width: 7ch; font-variant-numeric: tabular-nums; }
+  .bg-control input[type="range"] {
+    -webkit-appearance: none; appearance: none; width: 180px; max-width: 45vw; height: 12px; margin: 0;
+    border-radius: 999px; border: 1px solid var(--line); cursor: pointer;
+    background: linear-gradient(to right, #000000, #7b7e8a, #ffffff);
+  }
+  .bg-control input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--bg); border: 2px solid var(--fg); }
+  .bg-control input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--bg); border: 2px solid var(--fg); }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<main>
+  <header>
+    <div>
+      <h1>Hex Word Swatches</h1>
+      <p>Names and words spelled only with the letters a–f, so each one is also a valid CSS hex color. Three-letter words are shorthand: <code>#ace</code> expands to <code>#aaccee</code>.</p>
+    </div>
+    <div class="controls">
+      <label class="bg-control" for="hue-slider">
+        <span>Hue</span>
+        <input type="range" id="hue-slider" min="0" max="360" step="1">
+        <output id="hue-value" for="hue-slider"></output>
+      </label>
+      <label class="bg-control" for="sat-slider">
+        <span>Saturation</span>
+        <input type="range" id="sat-slider" min="0" max="1000" step="1">
+        <output id="sat-value" for="sat-slider"></output>
+      </label>
+      <label class="bg-control" for="bg-slider">
+        <span>Lightness</span>
+        <input type="range" id="bg-slider" min="0" max="100" step="1">
+        <output id="bg-value" for="bg-slider"></output>
+      </label>
+      <div class="bg-hex" id="bg-hex"></div>
+    </div>
+  </header>
+
+  <div class="palette">
+    <div class="palette-head">
+      <h2 style="border:0;padding:0">Your palette</h2>
+      <button id="clear" type="button">Clear</button>
+    </div>
+    <div class="strip" id="strip" aria-label="Palette strip"></div>
+  </div>
+
+  <section>
+    <div class="palette-head" style="border-bottom:1px solid var(--line);padding-bottom:8px">
+      <h2 style="border:0;padding:0">All 33 swatches</h2>
+      <button id="shuffle" type="button">Shuffle</button>
+    </div>
+    <div class="grid" id="grid" data-words="abe ace ada add bad bea bed bee cab cad dab dad deb dee eda ebb fab fad fae fed fee accede beaded bedded beebee beefed dabbed decade dedede deedee deface efface facade"></div>
+  </section>
+</main>
+
+<script>
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} }
+  };
+
+  // Background sliders: lightness 0 = black, 100 = white; hue adds a faint tint (low saturation)
+  const root = document.documentElement;
+  const slider = document.getElementById("bg-slider");
+  const bgValue = document.getElementById("bg-value");
+  const hslHex = (h, s, l) => {
+    s /= 100; l /= 100;
+    const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
+    const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1));
+    return "#" + [0, 8, 4].map(n => Math.round(f(n) * 255).toString(16).padStart(2, "0")).join("");
+  };
+  const clamp = v => Math.max(0, Math.min(100, v));
+  const hueSlider = document.getElementById("hue-slider");
+  const hueValue = document.getElementById("hue-value");
+  const satSlider = document.getElementById("sat-slider");
+  const satValue = document.getElementById("sat-value");
+  // Exponential mapping: slider position 0..1000 -> saturation 0..100%, finer steps near 0
+  const posToSat = p => Math.pow(101, p / 1000) - 1;
+  const satToPos = s => Math.round(1000 * Math.log(s + 1) / Math.log(101));
+  function applyBg() {
+    const L = +slider.value, H = +hueSlider.value;
+    const SAT = posToSat(+satSlider.value);
+    satValue.textContent = (SAT < 10 ? SAT.toFixed(1) : Math.round(SAT)) + "%";
+    satSlider.style.background = `linear-gradient(to right, ${[0, 250, 500, 750, 1000].map(p => hslHex(H, posToSat(p), L)).join(", ")})`;
+    store.set("hex-sat", satSlider.value);
+    const dark = L < 45;
+    const set = (k, v) => root.style.setProperty(k, v);
+    const bg = hslHex(H, SAT, L);
+    set("--bg", bg);
+    set("--surface", hslHex(H, SAT, clamp(dark ? L + 5 : L + 3)));
+    set("--line", hslHex(H, SAT, clamp(dark ? L + 14 : L - 12)));
+    slider.style.background = `linear-gradient(to right, ${[0, 20, 40, 60, 80, 100].map(l => hslHex(H, SAT, l)).join(", ")})`;
+    hueValue.textContent = H + "°";
+    store.set("hex-hue", String(H));
+    set("--fg", dark ? "#ececf1" : "#1c1d24");
+    set("--muted", dark ? "#b8bac6" : "#3f414c");
+    root.style.colorScheme = dark ? "dark" : "light";
+    bgValue.textContent = L + "%";
+    document.getElementById("bg-hex").textContent = bg;
+    store.set("hex-bg", String(L));
+  }
+  const savedBg = parseInt(store.get("hex-bg"), 10);
+  const startDark = root.dataset.theme === "dark" || (!root.dataset.theme && matchMedia("(prefers-color-scheme: dark)").matches);
+  const savedHue = parseInt(store.get("hex-hue"), 10);
+  slider.value = Number.isFinite(savedBg) ? savedBg : (startDark ? 9 : 97);
+  hueSlider.value = Number.isFinite(savedHue) ? savedHue : 235;
+  const savedSat = parseInt(store.get("hex-sat"), 10);
+  satSlider.value = Number.isFinite(savedSat) ? savedSat : satToPos(14);
+  satSlider.addEventListener("input", applyBg);
+  applyBg();
+  slider.addEventListener("input", applyBg);
+  hueSlider.addEventListener("input", applyBg);
+
+  // Swatches
+  const MEANINGS = {
+    abe: "Short for Abraham. Grandpa Abe Simpson from The Simpsons.",
+    ace: "Ace the Bat-Hound, Batman's dog. Also the top playing card, or an expert.",
+    ada: "Ada Lovelace, often called the first computer programmer.",
+    add: "To combine numbers, or put one thing with another.",
+    bad: "Not good; poor in quality.",
+    bea: "Short for Beatrice. Aunt Bea from The Andy Griffith Show.",
+    bed: "Furniture for sleeping on; also a patch of garden.",
+    bee: "Flying insect that makes honey. A common pet name.",
+    cab: "A taxi, or the driver's compartment of a truck.",
+    cad: "A man who behaves dishonorably.",
+    dab: "A small amount; to pat lightly.",
+    dad: "Father.",
+    deb: "Short for Deborah; also short for debutante.",
+    dee: "Nickname for names starting with D, like Deirdre or Dolores.",
+    eda: "A given name, especially popular in Turkey.",
+    ebb: "The tide flowing out; to fade or decline.",
+    fab: "Short for fabulous.",
+    fad: "A short-lived craze.",
+    fae: "A given name (a spelling of Faye); also fairy folk.",
+    fed: "Past tense of feed; slang for a federal agent.",
+    fee: "A payment for a service.",
+    accede: "To agree to a request or demand; to take up an office.",
+    beaded: "Decorated with beads, or covered in drops.",
+    bedded: "Planted in a garden bed; set firmly in place.",
+    beebee: "A playful pet name; also BB, as in a BB gun.",
+    beefed: "Complained (beefed about), or strengthened (beefed up).",
+    dabbed: "Past tense of dab: patted lightly.",
+    decade: "A period of ten years.",
+    dedede: "King Dedede, the penguin king and Kirby's rival in Nintendo's Kirby games.",
+    deedee: "Dee Dee, Dexter's ballet-loving older sister in Dexter's Laboratory.",
+    deface: "To spoil the surface or look of something.",
+    efface: "To erase; to make yourself inconspicuous.",
+    facade: "The front of a building; a false outward appearance."
+  };
+  const expand = w => w.length === 3 ? [...w].map(c => c + c).join("") : w;
+  const luminance = hex => {
+    const ch = [0, 2, 4].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+  };
+  function makeSwatch(w) {
+    const full = expand(w);
+    const el = document.createElement("div");
+    el.className = "swatch";
+    el.draggable = true;
+    el.tabIndex = 0;
+    el.style.background = "#" + full;
+    el.dataset.tip = MEANINGS[w] || "";
+    el.style.color = luminance(full) > 0.18 ? "#14141a" : "#ffffff";
+    el.innerHTML = `<div class="word">${w}</div><div class="hex"><span>#${w}</span>${w.length === 3 ? `<span>#${full}</span>` : ""}</div>`;
+    return el;
+  }
+
+  // Palette strip state
+  const strip = document.getElementById("strip");
+  let palette = [];
+  try { palette = JSON.parse(store.get("hex-palette")) || []; } catch {}
+  if (!Array.isArray(palette)) palette = [];
+  let drag = null; // { word, from: "grid" | "strip", index }
+
+  function renderStrip() {
+    strip.innerHTML = "";
+    strip.classList.toggle("filled", palette.length > 0);
+    if (!palette.length) {
+      strip.innerHTML = `<div class="empty">Drag swatches here, or click one to add it. Drag within the strip to reorder.</div>`;
+    }
+    palette.forEach((w, i) => {
+      const el = makeSwatch(w);
+      el.setAttribute("aria-label", `${w}, position ${i + 1}`);
+      el.title = MEANINGS[w] || "";
+      const rm = document.createElement("button");
+      rm.className = "remove";
+      rm.type = "button";
+      rm.textContent = "×";
+      rm.setAttribute("aria-label", `Remove ${w}`);
+      rm.addEventListener("click", e => { e.stopPropagation(); palette.splice(i, 1); save(); });
+      el.appendChild(rm);
+      el.addEventListener("dragstart", e => {
+        drag = { word: w, from: "strip", index: i };
+        e.dataTransfer.setData("text/plain", "#" + expand(w));
+        e.dataTransfer.effectAllowed = "move";
+        requestAnimationFrame(() => el.classList.add("dragging"));
+      });
+      el.addEventListener("dragend", () => { el.classList.remove("dragging"); clearMarkers(); drag = null; });
+      el.addEventListener("keydown", e => {
+        if (e.key === "Delete" || e.key === "Backspace") { palette.splice(i, 1); save(); }
+      });
+      strip.appendChild(el);
+    });
+  }
+  function save() { store.set("hex-palette", JSON.stringify(palette)); renderStrip(); }
+  function clearMarkers() {
+    strip.classList.remove("over");
+    strip.querySelectorAll(".insert-before").forEach(n => n.classList.remove("insert-before"));
+  }
+
+  // Where to insert: before the strip swatch under the pointer if it's on its left half, else after it
+  function dropIndex(e) {
+    const target = e.target.closest(".strip .swatch");
+    if (!target) return palette.length;
+    const items = [...strip.querySelectorAll(".swatch")];
+    const i = items.indexOf(target);
+    const r = target.getBoundingClientRect();
+    return e.clientX < r.left + r.width / 2 ? i : i + 1;
+  }
+
+  strip.addEventListener("dragover", e => {
+    if (!drag) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = drag.from === "strip" ? "move" : "copy";
+    clearMarkers();
+    strip.classList.add("over");
+    const idx = dropIndex(e);
+    const items = strip.querySelectorAll(".swatch");
+    if (items[idx]) items[idx].classList.add("insert-before");
+  });
+  strip.addEventListener("dragleave", e => { if (!strip.contains(e.relatedTarget)) clearMarkers(); });
+  strip.addEventListener("drop", e => {
+    if (!drag) return;
+    e.preventDefault();
+    let idx = dropIndex(e);
+    if (drag.from === "strip") {
+      palette.splice(drag.index, 1);
+      if (drag.index < idx) idx--;
+    }
+    palette.splice(idx, 0, drag.word);
+    clearMarkers();
+    drag = null;
+    save();
+  });
+
+  // Dragging a strip swatch out onto the page removes it
+  document.addEventListener("dragover", e => { if (drag && drag.from === "strip" && !strip.contains(e.target)) e.preventDefault(); });
+  document.addEventListener("drop", e => {
+    if (drag && drag.from === "strip" && !strip.contains(e.target)) {
+      e.preventDefault();
+      palette.splice(drag.index, 1);
+      drag = null;
+      save();
+    }
+  });
+
+  document.getElementById("clear").addEventListener("click", () => { palette = []; save(); });
+
+  // Source grid
+  const grid = document.getElementById("grid");
+  const words = grid.dataset.words.split(" ");
+  function renderGrid() {
+    grid.innerHTML = "";
+    words.forEach(w => {
+      const el = makeSwatch(w);
+      el.setAttribute("role", "button");
+      el.setAttribute("aria-label", `Add ${w} to palette. ${MEANINGS[w] || ""}`);
+      el.addEventListener("dragstart", e => {
+        drag = { word: w, from: "grid" };
+        e.dataTransfer.setData("text/plain", "#" + expand(w));
+        e.dataTransfer.effectAllowed = "copy";
+      });
+      el.addEventListener("dragend", () => { clearMarkers(); drag = null; });
+      const add = () => { palette.push(w); save(); };
+      el.addEventListener("click", add);
+      el.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); add(); } });
+      grid.appendChild(el);
+    });
+  }
+  document.getElementById("shuffle").addEventListener("click", () => {
+    for (let i = words.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [words[i], words[j]] = [words[j], words[i]];
+    }
+    renderGrid();
+  });
+
+  renderGrid();
+  renderStrip();
+</script>
